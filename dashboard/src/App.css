@@ -223,6 +223,40 @@ button.secondary {
     border-color: var(--primary);
 }
 
+/* Header Status & Badges */
+.header-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.redirection-badge {
+    padding: 2px 10px;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.redirection-badge.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.redirection-badge.warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.redirection-badge.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error);
+    border: 1px solid var(--error);
+}
+
 .empty-state {
     display: flex;
     height: 100%;
@@ -326,10 +360,11 @@ button.secondary {
 }
 
 .dot {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     background: var(--error);
+    transition: all 0.3s;
 }
 
 .dot.connected {

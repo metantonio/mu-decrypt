@@ -4,6 +4,7 @@ import sys
 from src.proxy import MuProxy
 from src.scanner import print_scan_report, get_target_from_scan
 from src.hosts_manager import HostsManager
+from src.divert import DivertManager
 from src.fast_server import app, send_packet_to_ui, get_command_for_proxy
 import uvicorn
 
@@ -14,6 +15,7 @@ async def main():
     parser.add_argument("--remote-port", type=int, default=44405, help="Remote server port (default: 44405)")
     parser.add_argument("--scan", action="store_true", help="Scan for Mu Online processes and ports")
     parser.add_argument("--redirect", type=str, help="Domain to redirect to localhost (requires admin)")
+    parser.add_argument("--transparent", action="store_true", help="Use WinDivert for transparent IP-level interception (requires pydivert)")
     parser.add_argument("--ui", action="store_true", help="Start the Web Dashboard UI")
     
     args = parser.parse_args()
@@ -29,6 +31,11 @@ async def main():
         if choice in ['', 's', 'si', 'y', 'yes']:
             if not hosts.apply_redirection():
                 return
+            # Verify if it actually worked (anti-cheat check)
+            if hosts.verify_resolution():
+                print(f"[✓] Verificación DNS: {args.redirect} redirigido con éxito.")
+            else:
+                print(f"[!] ADVERTENCIA: {args.redirect} NO resuelve a 127.0.0.1. El Anti-Cheat podría estar bloqueando.")
         else:
             hosts = None # Don't cleanup if we didn't apply
 
@@ -45,6 +52,12 @@ async def main():
             print(f"[*] Puerto Local (Proxy): {local_port}")
             
             proxy = MuProxy(local_port, host, port)
+            
+            divert = None
+            if args.transparent:
+                divert = DivertManager(host, port, local_port)
+                if not divert.start():
+                    return
             
             if args.ui:
                 proxy.ui_callback = send_packet_to_ui
@@ -64,8 +77,9 @@ async def main():
             except (KeyboardInterrupt, asyncio.CancelledError):
                 print("\n[!] Deteniendo proxy y servidores...")
             finally:
-                if hosts:
-                    hosts.remove_redirection()
+                if divert:
+                    divert.stop()
+                HostsManager.clear_all_redirections()
             return
         return
 
@@ -99,8 +113,9 @@ async def main():
     except Exception as e:
         print(f"\n[!] Error: {e}")
     finally:
-        if hosts:
-            hosts.remove_redirection()
+        if 'divert' in locals() and divert:
+            divert.stop()
+        HostsManager.clear_all_redirections()
 
 if __name__ == "__main__":
     try:

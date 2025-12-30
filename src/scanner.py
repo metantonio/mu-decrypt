@@ -120,11 +120,24 @@ def print_scan_report(processes=None):
             print(f"[{idx}] Proceso: {p['name']} (PID: {p['pid']})")
             print(f"    Ruta: {p['exe']}")
             print(f"    Puertos Locales Activos: {', '.join(map(str, p['ports'])) if p['ports'] else 'Ninguno'}")
-            print(f"    Direcciones Remotas: {', '.join(p['remote_addresses']) if p['remote_addresses'] else 'Ninguna'}")
+            
+            # Highlight 44405 as ConnectServer
+            remote_addrs = []
+            for addr in p['remote_addresses']:
+                if ":44405" in addr:
+                    remote_addrs.append(f"{addr} [!!! CONNECTSERVER !!!]")
+                else:
+                    remote_addrs.append(addr)
+            
+            print(f"    Direcciones Remotas: {', '.join(remote_addrs) if remote_addrs else 'Ninguna'}")
             if p.get('discovered_domains'):
                 print(f"    Dominios Sugeridos: {', '.join(p['discovered_domains'])}")
             if p.get('config_hints'):
                 print(f"    Pistas en Config: {', '.join(p['config_hints'])}")
+            
+            if not p.get('discovered_domains') and p.get('remote_addresses'):
+                print(f"    [!] TIP: No se detectaron dominios. Usa el Modo Transparente (--transparent) con estas IPs.")
+            
             print("-" * 50)
     
     print("="*50 + "\n")

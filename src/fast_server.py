@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Track active redirection for UI diagnostics
+active_redirection = {"domain": None, "status": "none", "mode": "hosts"}
+
 # Enable CORS for frontend development
 app.add_middleware(
     CORSMiddleware,
@@ -62,10 +65,32 @@ async def apply_redirect(data: dict):
     hosts = HostsManager(domain)
     # Note: We assume the server is already running with enough privileges 
     # since it was launched from main.py
+    active_redirection["domain"] = domain
     if hosts.apply_redirection():
-        return {"status": "success", "message": f"Redirected {domain} to 127.0.0.1"}
+        # Verify if it actually worked (anti-cheat check)
+        if hosts.verify_resolution():
+            active_redirection["status"] = "success"
+            return {"status": "success", "message": f"Redirección aplicada: {domain} -> 127.0.0.1 (DNS verificado)"}
+        else:
+            active_redirection["status"] = "warning"
+            return {"status": "warning", "message": f"Archivo hosts actualizado, pero {domain} NO resuelve a 127.0.0.1. El Anti-Cheat podría estar bloqueando."}
+    
+    active_redirection["status"] = "error"
     return {"status": "error", "message": "Failed to apply redirection (Check Admin privileges)"}
 
+@app.post("/api/verify")
+async def verify_dns(data: dict):
+    """
+    Verifies if a domain resolves to 127.0.0.1.
+    """
+    domain = data.get("domain")
+    if not domain:
+        return {"status": "error", "message": "Domain is required"}
+    
+    hosts = HostsManager(domain)
+    if hosts.verify_resolution():
+        return {"status": "success", "message": f"{domain} está redirigido correctamente."}
+    return {"status": "warning", "message": f"{domain} NO está apuntando a 127.0.0.1. El juego podría estar ignorando el archivo hosts."}
 @app.get("/api/status")
 async def get_status():
     """
@@ -73,7 +98,7 @@ async def get_status():
     """
     return {
         "status": "online",
-        "has_callback": True
+        "redirection": active_redirection
     }
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

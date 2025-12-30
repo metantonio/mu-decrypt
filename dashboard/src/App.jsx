@@ -10,6 +10,7 @@ function App() {
   const [injectHex, setInjectHex] = useState('');
   const [injectTarget, setInjectTarget] = useState('s');
   const [broadcastMode, setBroadcastMode] = useState(true);
+  const [redirectionStatus, setRedirectionStatus] = useState({ domain: null, status: 'none' });
 
   const [scanResults, setScanResults] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -19,8 +20,10 @@ function App() {
 
   useEffect(() => {
     connectWS();
+    const interval = setInterval(pollStatus, 3000);
     return () => {
       if (ws.current) ws.current.close();
+      clearInterval(interval);
     };
   }, []);
 
@@ -36,6 +39,7 @@ function App() {
     ws.current.onopen = () => {
       setIsConnected(true);
       console.log('Connected to Backend');
+      pollStatus();
     };
 
     ws.current.onmessage = (event) => {
@@ -75,6 +79,16 @@ function App() {
     };
   };
 
+  const pollStatus = async () => {
+    try {
+      const res = await fetch('http://localhost:8000/api/status');
+      const data = await res.json();
+      if (data.redirection) {
+        setRedirectionStatus(data.redirection);
+      }
+    } catch (e) { }
+  };
+
   const startScan = async () => {
     setIsScanning(true);
     try {
@@ -95,9 +109,14 @@ function App() {
         body: JSON.stringify({ domain })
       });
       const data = await res.json();
-      alert(data.message);
+      pollStatus();
+      if (data.status === 'warning') {
+        alert("⚠️ " + data.message);
+      } else {
+        alert("✅ " + data.message);
+      }
     } catch (e) {
-      alert("Error al aplicar redirección");
+      alert("❌ Error al aplicar redirección");
     }
   };
 
@@ -117,24 +136,37 @@ function App() {
   return (
     <div className="dashboard">
       <header>
-        <div className="brand">Mu-Decrypt Engine <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>v2.2</span></div>
+        <div className="brand">Mu-Decrypt Engine <span style={{ fontSize: '0.8rem', opacity: 0.6 }}>v2.3</span></div>
         <nav className="view-selector">
           <button className={view === 'packets' ? 'active' : ''} onClick={() => setView('packets')}>Paquetes</button>
           <button className={view === 'scanner' ? 'active' : ''} onClick={() => setView('scanner')}>Escáner</button>
         </nav>
-        <div className="status-indicator">
+
+        <div className="header-status">
+          {redirectionStatus.domain && (
+            <div className={`redirection-badge ${redirectionStatus.status}`}>
+              {redirectionStatus.status === 'success' ? '✓' : '⚠️'} {redirectionStatus.domain}
+            </div>
+          )}
           <div className={`dot ${isConnected ? 'connected' : ''}`}></div>
-          {isConnected ? 'Sistema en línea' : 'Desconectado'}
+          <span style={{ fontSize: '0.85rem' }}>{isConnected ? 'Conectado' : 'Sin Señal'}</span>
         </div>
       </header>
 
       <div className="sidebar">
-        <h3>Clientes Activos</h3>
+        <h3>Intercepción</h3>
         <div className="client-selector">
           {activeClients.length === 0 ? (
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', textAlign: 'center', padding: '1rem' }}>
-              Sin conexiones activas.<br />Abre el juego para interceptar.
-            </p>
+            <div style={{ padding: '1rem', textAlign: 'center', background: 'rgba(0,0,0,0.1)', borderRadius: '8px' }}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', margin: 0 }}>
+                Esperando tráfico...
+              </p>
+              {!redirectionStatus.domain && (
+                <p style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '0.5rem', fontWeight: 600 }}>
+                  TIP: Usa el Escáner para activar la redirección
+                </p>
+              )}
+            </div>
           ) : (
             activeClients.map(id => (
               <div
@@ -155,39 +187,31 @@ function App() {
         <div style={{ padding: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '0.8rem' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
             <input type="checkbox" checked={broadcastMode} onChange={() => setBroadcastMode(!broadcastMode)} />
-            Modo Broadcast (Enviar a todos)
+            Modo Broadcast
           </label>
-          <p style={{ margin: '0.5rem 0 0', color: 'var(--text-dim)' }}>
-            Target: <strong>{broadcastMode ? "TODOS" : (selectedClientId || "Ninguno")}</strong>
-          </p>
         </div>
 
         <div style={{ marginTop: '1rem' }}>
-          <label style={{ fontSize: '0.8rem', marginBottom: '0.4rem', display: 'block' }}>Destino:</label>
           <div className="input-group">
-            <button className={injectTarget === 's' ? 'primary' : 'secondary'} onClick={() => setInjectTarget('s')}>Servidor</button>
-            <button className={injectTarget === 'c' ? 'primary' : 'secondary'} onClick={() => setInjectTarget('c')}>Cliente</button>
+            <button className={injectTarget === 's' ? 'primary' : 'secondary'} onClick={() => setInjectTarget('s')}>Al Servidor</button>
+            <button className={injectTarget === 'c' ? 'primary' : 'secondary'} onClick={() => setInjectTarget('c')}>Al Cliente</button>
           </div>
         </div>
 
         <div className="input-group">
           <input
             type="text"
-            placeholder="Payload HEX (ej: C1040001)"
+            placeholder="Payload HEX"
             value={injectHex}
             onChange={(e) => setInjectHex(e.target.value.replace(/[^0-9a-fA-F]/g, ''))}
           />
-          <button onClick={sendInjection} className="action-button">Inyectar</button>
+          <button onClick={sendInjection} className="action-button">Enviar</button>
         </div>
 
         <div style={{ marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '1rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '4px' }}>
-            <span style={{ color: 'var(--text-dim)' }}>Paquetes:</span>
-            <span>{packets.length}</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-            <span style={{ color: 'var(--text-dim)' }}>Conexiones:</span>
-            <span>{activeClients.length}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', opacity: 0.6 }}>
+            <span>Paquetes: {packets.length}</span>
+            <span>Clientes: {activeClients.length}</span>
           </div>
         </div>
       </div>
@@ -197,9 +221,16 @@ function App() {
           <div className="packet-list" ref={packetListRef}>
             {activeClients.length === 0 ? (
               <div className="empty-state">
-                <div style={{ textAlign: 'center' }}>
-                  <p>Esperando primer paquete...</p>
-                  <p style={{ fontSize: '0.8rem', opacity: 0.7 }}>Si el juego ya está abierto, intenta reconectar.</p>
+                <div style={{ textAlign: 'center', maxWidth: '400px' }}>
+                  <h2 style={{ color: 'var(--text-main)', marginBottom: '1rem' }}>Listo para Interceptar</h2>
+                  <p>Si el juego ya está abierto y no ves paquetes:</p>
+                  <ol style={{ textAlign: 'left', fontSize: '0.9rem', color: 'var(--text-dim)', lineHeight: 1.6 }}>
+                    <li>Ve a la pestaña <strong>Escáner</strong>.</li>
+                    <li>Busca el dominio del servidor (ej: <code>connect.mu.com</code>).</li>
+                    <li>Pulsa <strong>Force Local</strong>.</li>
+                    <li>Reinicia el juego (Launcher).</li>
+                    <li style={{ color: 'var(--primary)', fontWeight: 'bold' }}>Si nada de eso funciona: Activa el <strong>Modo Transparente</strong> lanzando el script con <code>--transparent</code>.</li>
+                  </ol>
                 </div>
               </div>
             ) : filteredPackets.length === 0 ? (
@@ -212,7 +243,6 @@ function App() {
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <span className="packet-badge">Type: {p.packet_type}</span>
                       <span className="packet-badge">Op: {p.opcode}</span>
-                      <span className="packet-badge">Size: {p.size}</span>
                     </div>
                   </div>
                   <div className="packet-hex">{p.hex}</div>
@@ -223,44 +253,73 @@ function App() {
         ) : (
           <div className="scanner-view">
             <div className="scanner-header">
-              <h2>Detective de Procesos</h2>
-              <button onClick={startScan} disabled={isScanning}>
-                {isScanning ? 'Escaneando...' : 'Iniciar Escaneo'}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <h2 style={{ margin: 0 }}>Detective de Procesos</h2>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)', margin: '4px 0 0 0' }}>Identifica puertos y dominios de conexión</p>
+              </div>
+              <button onClick={startScan} disabled={isScanning} style={{ padding: '0.6rem 1.5rem' }}>
+                {isScanning ? 'Buscando...' : 'Escanear Ahora'}
               </button>
             </div>
 
             <div className="scan-results">
               {scanResults.length === 0 ? (
-                <div className="empty-state">Busca `main.exe` para identificar dominios de conexión</div>
+                <div className="empty-state">Pulsa "Escanear Ahora" con el juego abierto</div>
               ) : (
                 scanResults.map((p, i) => (
                   <div key={i} className="process-card">
                     <div className="process-title">
-                      <strong>{p.name}</strong> <span>(PID: {p.pid})</span>
+                      <strong>{p.name}</strong> <span style={{ opacity: 0.5 }}>PID: {p.pid}</span>
                     </div>
-                    <div className="process-detail">{p.exe}</div>
+                    <div className="process-detail" style={{ marginBottom: '1rem' }}>{p.exe}</div>
 
-                    <div className="suggestion-section">
-                      <h4>Dominios para Redirección (hosts):</h4>
-                      <div className="suggestion-tags">
-                        {p.discovered_domains.concat(p.config_hints).map((d, j) => (
-                          <div key={j} className="suggestion-tag" onClick={() => applyRedirect(d)}>
-                            {d} <span>(Force Local)</span>
-                          </div>
-                        ))}
-                        {p.discovered_domains.length + p.config_hints.length === 0 && (
-                          <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>Usa el dominio del juego si lo conoces.</span>
-                        )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                      <div className="suggestion-section">
+                        <h4>Dominios Detectados:</h4>
+                        <div className="suggestion-tags">
+                          {p.discovered_domains.concat(p.config_hints).map((d, j) => (
+                            <div key={j} className="suggestion-tag" onClick={() => applyRedirect(d)}>
+                              {d} <span>(Force Local)</span>
+                            </div>
+                          ))}
+                          {p.discovered_domains.length + p.config_hints.length === 0 && (
+                            <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>No se hallaron dominios.</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="connection-section">
+                        <h4>Conexiones IPs:</h4>
+                        <ul style={{ fontSize: '0.85rem', color: 'var(--accent)', margin: '0.5rem 0', paddingLeft: '1.2rem' }}>
+                          {p.remote_addresses.map((addr, k) => (
+                            <li key={k} style={addr.includes('CONNECTSERVER') ? { color: 'var(--primary)', fontWeight: 'bold' } : {}}>
+                              {addr}
+                            </li>
+                          ))}
+                          {p.remote_addresses.length === 0 && <li>Ninguna conexión activa.</li>}
+                        </ul>
                       </div>
                     </div>
 
-                    <div className="connection-section">
-                      <h4>Rutas IP detectadas (Establecidas):</h4>
-                      <ul style={{ fontSize: '0.85rem', color: 'var(--accent)', margin: '0.5rem 0' }}>
-                        {p.remote_addresses.map((addr, k) => <li key={k}>{addr}</li>)}
-                        {p.remote_addresses.length === 0 && <li>Sin conexiones externas visibles.</li>}
-                      </ul>
-                    </div>
+                    {p.remote_addresses.some(a => a.includes('CONNECTSERVER')) && (
+                      <div style={{
+                        background: 'rgba(79, 70, 229, 0.1)',
+                        border: '1px solid var(--primary)',
+                        padding: '1rem',
+                        borderRadius: '12px',
+                        fontSize: '0.85rem',
+                        marginTop: '1rem',
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '1rem'
+                      }}>
+                        <span style={{ fontSize: '1.5rem' }}>💡</span>
+                        <div>
+                          <strong>¡ConnectServer detectado!</strong> Redirigir el dominio que ves a la izquierda es fundamental para capturar el tráfico del GameServer más adelante.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
