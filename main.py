@@ -21,7 +21,7 @@ async def main():
     args = parser.parse_args()
 
     hosts = None
-    if args.redirect:
+    if args.redirect and not args.transparent:
         hosts = HostsManager(args.redirect)
         if not hosts.is_admin():
             hosts.run_as_admin()
@@ -38,6 +38,8 @@ async def main():
                 print(f"[!] ADVERTENCIA: {args.redirect} NO resuelve a 127.0.0.1. El Anti-Cheat podría estar bloqueando.")
         else:
             hosts = None # Don't cleanup if we didn't apply
+    elif args.redirect and args.transparent:
+        print("[*] Modo Transparente activo: Se ignorará la redirección por archivo hosts.")
 
     if args.scan:
         target = get_target_from_scan()
@@ -58,6 +60,12 @@ async def main():
                 divert = DivertManager(host, port, local_port)
                 if not divert.start():
                     return
+                # Notify API that we are in transparent mode
+                try:
+                    import requests
+                    requests.post("http://localhost:8000/api/config", json={"transparent": True}, timeout=1)
+                except:
+                    pass
             
             if args.ui:
                 proxy.ui_callback = send_packet_to_ui

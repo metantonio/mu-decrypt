@@ -12,6 +12,7 @@ app = FastAPI()
 
 # Track active redirection for UI diagnostics
 active_redirection = {"domain": None, "status": "none", "mode": "hosts"}
+transparent_mode_active = False # Set by main.py if --transparent is used
 
 # Enable CORS for frontend development
 app.add_middleware(
@@ -53,6 +54,16 @@ async def get_scan():
     """
     return scan_mu_processes()
 
+@app.post("/api/config")
+async def set_config(data: dict):
+    """Sets global configuration flags from main.py"""
+    global transparent_mode_active
+    transparent_mode_active = data.get("transparent", False)
+    if transparent_mode_active:
+        active_redirection["mode"] = "divert"
+        active_redirection["status"] = "success" # Divert is handled at network level
+    return {"status": "ok"}
+
 @app.post("/api/redirect")
 async def apply_redirect(data: dict):
     """
@@ -61,11 +72,18 @@ async def apply_redirect(data: dict):
     domain = data.get("domain")
     if not domain:
         return {"status": "error", "message": "Domain is required"}
-    
+
+    if transparent_mode_active:
+        active_redirection["domain"] = domain
+        active_redirection["status"] = "success"
+        active_redirection["mode"] = "divert"
+        return {"status": "success", "message": f"Modo Transparente (WinDivert) activo para {domain}. Ignorando archivos hosts."}
+
     hosts = HostsManager(domain)
     # Note: We assume the server is already running with enough privileges 
     # since it was launched from main.py
     active_redirection["domain"] = domain
+    active_redirection["mode"] = "hosts"
     if hosts.apply_redirection():
         # Verify if it actually worked (anti-cheat check)
         if hosts.verify_resolution():
@@ -119,6 +137,8 @@ async def send_packet_to_ui(packet_info: dict):
     """
     Called by the proxy to stream packet data to the UI.
     """
+    if manager.active_connections:
+        print(f"[*] WS BROADCAST: Enviando paquete a {len(manager.active_connections)} clientes UI.")
     await manager.broadcast({
         "type": "packet",
         "data": packet_info

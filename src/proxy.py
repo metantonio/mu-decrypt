@@ -16,6 +16,7 @@ class MuProxy:
         self.auto_redirect = True 
         self.ui_callback = None
         self.internal_tasks = []
+        self.proxy_outbound_port = 54321 # Fixed port for loop prevention in transparent mode
 
     async def handle_client(self, client_reader, client_writer):
         client_address = client_writer.get_extra_info('peername')
@@ -27,8 +28,11 @@ class MuProxy:
         self.active_clients[client_id] = (server_queue, client_queue)
 
         try:
+            # When using WinDivert, we must bind our outbound connection to a specific port
+            # so the Divert filter can exclude it and avoid infinite loops.
             remote_reader, remote_writer = await asyncio.open_connection(
-                self.remote_host, self.remote_port
+                self.remote_host, self.remote_port,
+                local_addr=('0.0.0.0', self.proxy_outbound_port)
             )
             logger.info(f"Connected to remote server {self.remote_host}:{self.remote_port} for {client_id}")
 
@@ -84,6 +88,7 @@ class MuProxy:
                     
                     # Stream to UI if enabled
                     if self.ui_callback:
+                        print(f"[*] PROXY -> UI: Enviando paquete {packet.get_name()} ({direction})")
                         asyncio.create_task(self.ui_callback({
                             "type": "packet",
                             "client_id": client_id,

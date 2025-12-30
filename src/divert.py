@@ -28,10 +28,10 @@ class DivertManager:
         2. Inbound packets from 127.0.0.1:LocalPort (Redirect back to RemoteIP:RemotePort)
         """
         # Filter for TCP packets to/from the target
-        # We MUST exclude the proxy's own process to avoid infinite loops
-        pid = os.getpid()
+        # We exclude the proxy's outbound connection (SourcePort 54321) to avoid infinite loops
+        # and also exclude common loopback noise.
         filter_str = (
-            f"(tcp.DstPort == {self.remote_port} and ip.DstAddr == {self.remote_ip} and proc.Id != {pid}) or "
+            f"(tcp.DstPort == {self.remote_port} and ip.DstAddr == {self.remote_ip} and tcp.SrcPort != 54321) or "
             f"(tcp.SrcPort == {self.local_port} and ip.SrcAddr == 127.0.0.1 and ip.DstAddr == 127.0.0.1)"
         )
         
