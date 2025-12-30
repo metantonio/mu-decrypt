@@ -4,6 +4,8 @@ import sys
 from src.proxy import MuProxy
 from src.scanner import print_scan_report, get_target_from_scan
 from src.hosts_manager import HostsManager
+from src.fast_server import app, send_packet_to_ui, get_command_for_proxy
+import uvicorn
 
 async def main():
     parser = argparse.ArgumentParser(description="Mu Online Packet Decryptor & Injector")
@@ -12,6 +14,7 @@ async def main():
     parser.add_argument("--remote-port", type=int, default=44405, help="Remote server port (default: 44405)")
     parser.add_argument("--scan", action="store_true", help="Scan for Mu Online processes and ports")
     parser.add_argument("--redirect", type=str, help="Domain to redirect to localhost (requires admin)")
+    parser.add_argument("--ui", action="store_true", help="Start the Web Dashboard UI")
     
     args = parser.parse_args()
 
@@ -36,8 +39,19 @@ async def main():
             print(f"[*] Iniciando proxy automático para {name}...")
             print(f"[*] Objetivo: {host}:{port}")
             proxy = MuProxy(args.port, host, port)
+            
+            if args.ui:
+                proxy.ui_callback = send_packet_to_ui
+                
             try:
-                await proxy.start()
+                if args.ui:
+                    print(f"[*] Dashboard disponible en: http://localhost:8000")
+                    await asyncio.gather(
+                        proxy.start(),
+                        asyncio.to_thread(uvicorn.run, app, host="127.0.0.1", port=8000, log_level="error")
+                    )
+                else:
+                    await proxy.start()
             except KeyboardInterrupt:
                 print("\n[!] Deteniendo proxy...")
             finally:
@@ -55,9 +69,18 @@ async def main():
     print("="*50)
 
     proxy = MuProxy(args.port, args.host, args.remote_port)
+    if args.ui:
+        proxy.ui_callback = send_packet_to_ui
     
     try:
-        await proxy.start()
+        if args.ui:
+            print(f"[*] Dashboard disponible en: http://localhost:8000")
+            await asyncio.gather(
+                proxy.start(),
+                asyncio.to_thread(uvicorn.run, app, host="127.0.0.1", port=8000, log_level="error")
+            )
+        else:
+            await proxy.start()
     except KeyboardInterrupt:
         print("\n[!] Stopping proxy...")
     except Exception as e:

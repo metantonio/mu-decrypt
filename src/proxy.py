@@ -12,36 +12,58 @@ class MuProxy:
         self.remote_host = remote_host
         self.remote_port = remote_port
         self.server = None
-        self.inject_to_server_queue = asyncio.Queue()
-        self.inject_to_client_queue = asyncio.Queue()
-        self.auto_redirect = True # Enable automatic redirection by default
+        self.active_clients = {} # {client_id: (server_queue, client_queue)}
+        self.auto_redirect = True 
+        self.ui_callback = None
 
     async def handle_client(self, client_reader, client_writer):
         client_address = client_writer.get_extra_info('peername')
-        logger.info(f"New connection from {client_address}")
+        client_id = f"{client_address[0]}:{client_address[1]}"
+        logger.info(f"New connection from {client_id}")
+
+        server_queue = asyncio.Queue()
+        client_queue = asyncio.Queue()
+        self.active_clients[client_id] = (server_queue, client_queue)
 
         try:
             remote_reader, remote_writer = await asyncio.open_connection(
                 self.remote_host, self.remote_port
             )
-            logger.info(f"Connected to remote server {self.remote_host}:{self.remote_port}")
+            logger.info(f"Connected to remote server {self.remote_host}:{self.remote_port} for {client_id}")
 
             # Start console command listener
             console_task = asyncio.create_task(self.console_listener())
+            ui_task = None
+            if self.ui_callback:
+                from .fast_server import get_command_for_proxy
+                ui_task = asyncio.create_task(self.ui_command_poller(get_command_for_proxy))
 
-            await asyncio.gather(
-                self.pipe(client_reader, remote_writer, "CLIENT -> SERVER", self.inject_to_server_queue),
-                self.pipe(remote_reader, client_writer, "SERVER -> CLIENT", self.inject_to_client_queue),
+            tasks = [
+                self.pipe(client_reader, remote_writer, "CLIENT -> SERVER", server_queue, client_id),
+                self.pipe(remote_reader, client_writer, "SERVER -> CLIENT", client_queue, client_id),
                 console_task
-            )
+            ]
+            if ui_task: tasks.append(ui_task)
+
+            # Inform UI about new client
+            if self.ui_callback:
+                await self.ui_callback({"type": "client_connected", "client_id": client_id})
+
+            await asyncio.gather(*tasks)
         except Exception as e:
-            logger.error(f"Error handling client {client_address}: {e}")
+            logger.error(f"Error handling client {client_id}: {e}")
         finally:
+            if client_id in self.active_clients:
+                del self.active_clients[client_id]
+            
+            if self.ui_callback:
+                asyncio.create_task(self.ui_callback({"type": "client_disconnected", "client_id": client_id}))
+            
             client_writer.close()
             await client_writer.wait_closed()
-            logger.info(f"Connection closed for {client_address}")
+            logger.info(f"Connection closed for {client_id}")
 
-    async def pipe(self, reader, writer, direction, injection_queue):
+    async def pipe(self, reader, writer, direction, injection_queue, client_id):
         try:
             while True:
                 # Use wait_for or similar to handle both reading from socket and injection queue
@@ -67,6 +89,20 @@ class MuProxy:
                 for packet in parse_packets(data):
                     logger.info(f"[{direction}] {packet}")
                     logger.info(f"    HEX: {packet.raw_data.hex(' ')}")
+                    
+                    # Stream to UI if enabled
+                    if self.ui_callback:
+                        asyncio.create_task(self.ui_callback({
+                            "type": "packet",
+                            "client_id": client_id,
+                            "direction": direction,
+                            "packet_type": hex(packet.type),
+                            "size": packet.size,
+                            "opcode": hex(packet.get_opcode()) if packet.get_opcode() is not None else "None",
+                            "opcode_name": packet.get_name(),
+                            "hex": packet.raw_data.hex(' '),
+                            "timestamp": __import__("time").time()
+                        }))
                     
                     # Automatic Redirection Logic
                     if self.auto_redirect and direction == "SERVER -> CLIENT":
@@ -98,11 +134,20 @@ class MuProxy:
         finally:
             writer.close()
 
-    def inject_to_server(self, data):
-        self.inject_to_server_queue.put_nowait(data)
+    def inject_to_server(self, data, client_id=None):
+        if client_id and client_id in self.active_clients:
+            self.active_clients[client_id][0].put_nowait(data)
+        elif self.active_clients:
+            # Broadcast or pick first if no id
+            for cid in self.active_clients:
+                self.active_clients[cid][0].put_nowait(data)
 
-    def inject_to_client(self, data):
-        self.inject_to_client_queue.put_nowait(data)
+    def inject_to_client(self, data, client_id=None):
+        if client_id and client_id in self.active_clients:
+            self.active_clients[client_id][1].put_nowait(data)
+        elif self.active_clients:
+            for cid in self.active_clients:
+                self.active_clients[cid][1].put_nowait(data)
 
     async def start(self):
         self.server = await asyncio.start_server(
@@ -162,6 +207,24 @@ class MuProxy:
             except Exception as e:
                 logger.error(f"Error en consola: {e}")
                 await asyncio.sleep(1)
+
+    async def ui_command_poller(self, fetch_cmd):
+        while True:
+            cmd = await fetch_cmd()
+            if cmd:
+                if cmd.get("command") == "inject":
+                    target = cmd.get("target")
+                    hex_data = cmd.get("hex")
+                    client_id = cmd.get("client_id")
+                    try:
+                        data = bytes.fromhex(hex_data)
+                        if target == "s":
+                            self.inject_to_server(data, client_id)
+                        elif target == "c":
+                            self.inject_to_client(data, client_id)
+                    except:
+                        pass
+            await asyncio.sleep(0.5)
 
 if __name__ == "__main__":
     # Example usage (would be called from main.py)

@@ -1,3 +1,7 @@
 pytest
 cryptography
 psutil
+fastapi
+uvicorn
+websockets
+python-multipart

@@ -1,57 +1,68 @@
-# Mu Online Packet Decryptor & Injector Concept
+# Mu Online Packet Decryptor & Injector Engine
 
-Este proyecto es una prueba de concepto (PoC) diseñada para el estudio de la seguridad en el protocolo de comunicación de Mu Online. Permite interceptar, decodificar e inyectar paquetes entre el cliente y el servidor.
+Este proyecto es una suite avanzada diseñada para la interceptación, análisis y manipulación del protocolo de comunicación de Mu Online. Cuenta con una arquitectura asíncrona robusta y una interfaz web moderna para un análisis cómodo en tiempo real.
+
+## Características Principales
+
+- 🚀 **Dashboard Web Moderno**: Interfaz fluida para monitorizar paquetes e inyectar datos con un clic.
+- 🔍 **Escáner de Procesos**: Detección automática de procesos `main.exe` y sus conexiones activas.
+- 🛠️ **Gestión de Redirección**: Soporte para edición segura del archivo `hosts` con restauración automática.
+- 🧩 **Parser de OpCodes**: Identificación de acciones comunes como Movimiento, Teletransporte y Chat.
+- 🔒 **Decodificación**: Soporte inicial para SimpleModulus (C3/C4).
 
 ## Requisitos
 
-- Python 3.8 o superior
-- Pip (gestor de paquetes de Python)
+- Python 3.8+
+- Node.js & npm (Para el Dashboard)
+- Privilegios de Administrador (Opcional, para modificar el archivo `hosts`)
 
 ## Instalación
 
-Sigue estos pasos para configurar el proyecto en un entorno virtual:
+### 1. Backend (Python)
+```powershell
+# Crear y activar entorno virtual
+python -m venv venv
+.\venv\Scripts\activate
 
-1. **Clonar o descargar el repositorio** en tu máquina local.
-2. **Abrir una terminal** en la carpeta raíz del proyecto (`mu-decrypt`).
-3. **Crear un entorno virtual**:
-   ```powershell
-   # En Windows
-   python -m venv venv
-   ```
-4. **Activar el entorno virtual**:
-   ```powershell
-   # En Windows
-   .\venv\Scripts\activate
-   ```
-5. **Instalar las dependencias**:
-   ```powershell
-   pip install -r requirements.txt
-   ```
+# Instalar dependencias
+pip install -r requirements.txt
+```
+
+### 2. Frontend (React)
+```powershell
+cd dashboard
+npm install
+```
 
 ## Uso
 
-Para iniciar el proxy interceptor:
+### Lanzamiento Completo (Recomendado)
 
+Inicia el servidor backend con la interfaz web y el escaneo automático:
 ```powershell
-# Interceptar tráfico
-python main.py --port 55901 --host connect.muonline.com --remote-port 44405
-
-# Escanear procesos y puertos de Mu Online activos
-python main.py --scan
+python main.py --scan --ui --redirect connect.muonline.com
 ```
 
-### Argumentos:
-- `--port`: Puerto local donde escuchará el proxy (ej. 55901).
-- `--host`: Dirección del servidor real de Mu Online.
-- `--remote-port`: Puerto del servidor real (ej. 44405 para ConnectServer).
+Luego, en otra terminal, lanza el Dashboard:
+```powershell
+cd dashboard
+npm run dev
+```
+Accede a la interfaz en `http://localhost:5173`.
+
+### Argumentos de la CLI:
+- `--ui`: Activa el bridge para la interfaz web (WebSocket).
+- `--scan`: Escanea procesos activos para autoconfigurar el proxy.
+- `--redirect <dominio>`: Redirige un dominio (ej. `connect.muonline.com`) a `127.0.0.1` usando el archivo hosts.
+- `--port <puerto>`: Puerto local para la escucha del proxy (default: 55901).
 
 ## Estructura del Proyecto
 
-- `src/decryption.py`: Lógica de decodificación SimpleModulus (C3/C4).
-- `src/packet.py`: Parser de cabeceras de paquetes (C1-C4).
-- `src/proxy.py`: Implementación del servidor proxy asíncrono.
-- `src/scanner.py`: Herramienta de escaneo de procesos y puertos.
-- `main.py`: Punto de entrada de la aplicación.
+- `src/fast_server.py`: Bridge FastAPI para comunicación en tiempo real con la UI.
+- `src/hosts_manager.py`: Utilidad para gestión segura de redirección local.
+- `src/packet.py`: Lógica de análisis y identificación de opcodes.
+- `src/proxy.py`: Servidor proxy asíncrono con inyección dinámica.
+- `dashboard/`: Frontend React + Vite con diseño premium.
 
 ## Disclaimer
-Este proyecto tiene **fines educativos y de investigación únicamente**. El uso de estas herramientas en servidores oficiales puede violar los términos de servicio.
+Este proyecto tiene **fines educativos y de investigación únicamente**. El uso de estas herramientas en servidores oficiales puede violar los términos de servicio. Por favor, asegúrate de tener permiso antes de realizar análisis en infraestructuras de terceros.
