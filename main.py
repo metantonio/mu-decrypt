@@ -2,14 +2,20 @@ import asyncio
 import argparse
 import sys
 from src.proxy import MuProxy
+from src.scanner import print_scan_report
 
 async def main():
     parser = argparse.ArgumentParser(description="Mu Online Packet Decryptor & Injector")
     parser.add_argument("--port", type=int, default=55901, help="Local port to listen on")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Remote server host (default: 127.0.0.1)")
     parser.add_argument("--remote-port", type=int, default=44405, help="Remote server port (default: 44405)")
+    parser.add_argument("--scan", action="store_true", help="Scan for Mu Online processes and ports")
     
     args = parser.parse_args()
+
+    if args.scan:
+        print_scan_report()
+        return
 
     print("="*50)
     print("   Mu Online Packet Decryptor & Injector Concept")

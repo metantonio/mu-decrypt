@@ -33,7 +33,11 @@ Sigue estos pasos para configurar el proyecto en un entorno virtual:
 Para iniciar el proxy interceptor:
 
 ```powershell
+# Interceptar tráfico
 python main.py --port 55901 --host connect.muonline.com --remote-port 44405
+
+# Escanear procesos y puertos de Mu Online activos
+python main.py --scan
 ```
 
 ### Argumentos:
@@ -46,6 +50,7 @@ python main.py --port 55901 --host connect.muonline.com --remote-port 44405
 - `src/decryption.py`: Lógica de decodificación SimpleModulus (C3/C4).
 - `src/packet.py`: Parser de cabeceras de paquetes (C1-C4).
 - `src/proxy.py`: Implementación del servidor proxy asíncrono.
+- `src/scanner.py`: Herramienta de escaneo de procesos y puertos.
 - `main.py`: Punto de entrada de la aplicación.
 
 ## Disclaimer
