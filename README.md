@@ -44,6 +44,7 @@ Inicia el servidor backend con la interfaz web y el escaneo automático:
 python main.py --scan --ui --redirect connect.muonline.com
 #python main.py --scan --port 44405 --host 139.5.226.83 --remote-port 44405 --ui
 #python main.py --scan --ui --transparent
+#python main.py --scan --ui --memory
 ```
 
 

@@ -156,7 +156,7 @@ def get_target_from_scan():
         for addr in p['remote_addresses']:
             if ":" in addr:
                 ip, port = addr.split(":")
-                targets.append((ip, int(port), p['name']))
+                targets.append((ip, int(port), p['name'], p['pid']))
     
     if not targets:
         print("[!] Proceso encontrado, pero no hay conexiones remotas activas para interceptar.")
@@ -170,7 +170,7 @@ def get_target_from_scan():
     else:
         print("[*] Múltiples conexiones detectadas:")
         for idx, t in enumerate(targets):
-            print(f"    {idx}: {t[0]}:{t[1]} ({t[2]})")
+            print(f"    {idx}: {t[0]}:{t[1]} ({t[2]} - PID: {t[3]})")
         
         try:
             choice = input(f"[?] Selecciona el índice para iniciar el proxy (o presiona Enter para cancelar): ")

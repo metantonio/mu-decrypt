@@ -371,3 +371,51 @@ button.secondary {
     background: var(--success);
     box-shadow: 0 0 8px var(--success);
 }
+
+.stat-bar-container {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    height: 24px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-bar-container label {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 24px;
+    z-index: 2;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.stat-bar {
+    height: 100%;
+    transition: width 0.3s ease-out;
+    z-index: 1;
+}
+
+.stat-bar.hp {
+    background: linear-gradient(90deg, #991b1b, #ef4444);
+}
+
+.stat-bar.mp {
+    background: linear-gradient(90deg, #1e40af, #3b82f6);
+}
+
+.memory-hud {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.memory-hud h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+}

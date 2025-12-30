@@ -10,7 +10,8 @@ function App() {
   const [injectHex, setInjectHex] = useState('');
   const [injectTarget, setInjectTarget] = useState('s');
   const [broadcastMode, setBroadcastMode] = useState(true);
-  const [redirectionStatus, setRedirectionStatus] = useState({ domain: null, status: 'none' });
+  const [redirectionStatus, setRedirectionStatus] = useState({ domain: null, status: 'none', mode: 'hosts' });
+  const [memoryStats, setMemoryStats] = useState({ hp: 0, max_hp: 0, mp: 0, max_mp: 0, level: 0, connected: false });
 
   const [scanResults, setScanResults] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -68,8 +69,9 @@ function App() {
             if (!selectedClientId) setSelectedClientId(message.data.client_id);
             return [...prev, message.data.client_id];
           }
-          return prev;
         });
+      } else if (message.type === 'memory') {
+        setMemoryStats(message.data);
       }
     };
 
@@ -182,6 +184,23 @@ function App() {
             ))
           )}
         </div>
+
+        {memoryStats.connected && (
+          <div className="memory-hud" style={{ marginTop: '2rem' }}>
+            <h3>Estado del Personaje</h3>
+            <div className="stat-bar-container">
+              <label>HP: {memoryStats.hp} / {memoryStats.max_hp}</label>
+              <div className="stat-bar hp" style={{ width: `${(memoryStats.hp / memoryStats.max_hp) * 100 || 0}%` }}></div>
+            </div>
+            <div className="stat-bar-container" style={{ marginTop: '0.8rem' }}>
+              <label>MP: {memoryStats.mp} / {memoryStats.max_mp}</label>
+              <div className="stat-bar mp" style={{ width: `${(memoryStats.mp / memoryStats.max_mp) * 100 || 0}%` }}></div>
+            </div>
+            <div style={{ marginTop: '0.8rem', fontSize: '0.9rem', color: 'var(--accent)' }}>
+              Nivel: <span style={{ fontWeight: 700 }}>{memoryStats.level}</span>
+            </div>
+          </div>
+        )}
 
         <h3 style={{ marginTop: '2rem' }}>Inyección Manual</h3>
         <div style={{ padding: '0.5rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '0.8rem' }}>

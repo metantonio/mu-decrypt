@@ -6,3 +6,4 @@ uvicorn
 websockets
 python-multipart
 pydivert
+pymem

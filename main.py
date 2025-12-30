@@ -5,7 +5,8 @@ from src.proxy import MuProxy
 from src.scanner import print_scan_report, get_target_from_scan
 from src.hosts_manager import HostsManager
 from src.divert import DivertManager
-from src.fast_server import app, send_packet_to_ui, get_command_for_proxy
+from src.memory import MemoryManager
+from src.fast_server import app, send_packet_to_ui, get_command_for_proxy, send_memory_to_ui
 import uvicorn
 
 async def main():
@@ -16,6 +17,7 @@ async def main():
     parser.add_argument("--scan", action="store_true", help="Scan for Mu Online processes and ports")
     parser.add_argument("--redirect", type=str, help="Domain to redirect to localhost (requires admin)")
     parser.add_argument("--transparent", action="store_true", help="Use WinDivert for transparent IP-level interception (requires pydivert)")
+    parser.add_argument("--memory", action="store_true", help="Read game stats directly from memory (requires pymem)")
     parser.add_argument("--ui", action="store_true", help="Start the Web Dashboard UI")
     
     args = parser.parse_args()
@@ -44,7 +46,7 @@ async def main():
     if args.scan:
         target = get_target_from_scan()
         if target:
-            host, port, name = target
+            host, port, name, pid = target
             local_port = args.port if args.port is not None else port
             
             print(f"[*] DEBUG: Port detected from scan: {port}")
@@ -69,6 +71,12 @@ async def main():
             
             if args.ui:
                 proxy.ui_callback = send_packet_to_ui
+            
+            mem = None
+            if args.memory:
+                mem = MemoryManager(name, pid=pid) # Use specific PID from scan
+                if mem.connect():
+                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), asyncio.get_event_loop()))
                 
             try:
                 if args.ui:
@@ -87,6 +95,8 @@ async def main():
             finally:
                 if divert:
                     divert.stop()
+                if mem:
+                    mem.stop()
                 HostsManager.clear_all_redirections()
             return
         return

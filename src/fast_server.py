@@ -5,6 +5,7 @@ import json
 import logging
 from .scanner import scan_mu_processes
 from .hosts_manager import HostsManager
+from .memory import MemoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,8 @@ app = FastAPI()
 # Track active redirection for UI diagnostics
 active_redirection = {"domain": None, "status": "none", "mode": "hosts"}
 transparent_mode_active = False # Set by main.py if --transparent is used
+memory_stats = {"hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0, "connected": False}
+memory_offsets = {"hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0}
 
 # Enable CORS for frontend development
 app.add_middleware(
@@ -132,6 +135,26 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.error(f"Error parsing UI command: {e}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+@app.get("/api/memory")
+async def get_memory_stats():
+    return {**memory_stats, "offsets": memory_offsets}
+
+@app.post("/api/memory/offsets")
+async def update_offsets(data: dict):
+    global memory_offsets
+    memory_offsets.update(data)
+    return {"status": "success", "offsets": memory_offsets}
+
+async def send_memory_to_ui(stats: dict):
+    """Streams memory stats to the UI via WebSocket"""
+    global memory_stats
+    memory_stats.update(stats)
+    memory_stats["connected"] = True
+    await manager.broadcast({
+        "type": "memory",
+        "data": memory_stats
+    })
 
 async def send_packet_to_ui(packet_info: dict):
     """
