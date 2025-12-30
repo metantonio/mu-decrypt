@@ -86,6 +86,7 @@ class MemoryManager:
                     self.stats["level"] = self.pm.read_int(self.base_address + level_offset)
 
                 if self.on_update_callback:
+                    print(f"[*] MEMORY DEBUG: Stats actualizadas -> {self.stats}")
                     self.on_update_callback(self.stats)
                     
             except Exception as e:

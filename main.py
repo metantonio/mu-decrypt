@@ -75,8 +75,9 @@ async def main():
             mem = None
             if args.memory:
                 mem = MemoryManager(name, pid=pid) # Use specific PID from scan
+                loop = asyncio.get_event_loop()
                 if mem.connect():
-                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), asyncio.get_event_loop()))
+                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
                 
             try:
                 if args.ui:

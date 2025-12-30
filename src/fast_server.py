@@ -149,6 +149,7 @@ async def update_offsets(data: dict):
 async def send_memory_to_ui(stats: dict):
     """Streams memory stats to the UI via WebSocket"""
     global memory_stats
+    print(f"[*] WS BROADCAST MEMORY: Enviando stats a {len(manager.active_connections)} clientes UI.")
     memory_stats.update(stats)
     memory_stats["connected"] = True
     await manager.broadcast({
