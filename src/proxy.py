@@ -15,6 +15,7 @@ class MuProxy:
         self.active_clients = {} # {client_id: (server_queue, client_queue)}
         self.auto_redirect = True 
         self.ui_callback = None
+        self.internal_tasks = []
 
     async def handle_client(self, client_reader, client_writer):
         client_address = client_writer.get_extra_info('peername')
@@ -31,23 +32,14 @@ class MuProxy:
             )
             logger.info(f"Connected to remote server {self.remote_host}:{self.remote_port} for {client_id}")
 
-            # Start console command listener
-            console_task = asyncio.create_task(self.console_listener())
-            ui_task = None
-            if self.ui_callback:
-                from .fast_server import get_command_for_proxy
-                ui_task = asyncio.create_task(self.ui_command_poller(get_command_for_proxy))
-
             tasks = [
                 self.pipe(client_reader, remote_writer, "CLIENT -> SERVER", server_queue, client_id),
-                self.pipe(remote_reader, client_writer, "SERVER -> CLIENT", client_queue, client_id),
-                console_task
+                self.pipe(remote_reader, client_writer, "SERVER -> CLIENT", client_queue, client_id)
             ]
-            if ui_task: tasks.append(ui_task)
 
             # Inform UI about new client
             if self.ui_callback:
-                await self.ui_callback({"type": "client_connected", "client_id": client_id})
+                asyncio.create_task(self.ui_callback({"type": "client_connected", "client_id": client_id}))
 
             await asyncio.gather(*tasks)
         except Exception as e:
@@ -154,7 +146,8 @@ class MuProxy:
             self.handle_client, '127.0.0.1', self.local_port
         )
         addr = self.server.sockets[0].getsockname()
-        logger.info(f"Proxy started on {addr}, forwarding to {self.remote_host}:{self.remote_port}")
+        logger.info(f"[*] PROXY LISTENING ON: {addr}")
+        logger.info(f"[*] FORWARDING TO: {self.remote_host}:{self.remote_port}")
         print("\n" + "="*50)
         print("   CONSOLA DE INYECCIÓN ACTIVA")
         print("   Comandos:")
@@ -164,8 +157,41 @@ class MuProxy:
         print("   - exit          : Salir")
         print("="*50 + "\n")
 
+        if self.ui_callback:
+            from .fast_server import get_command_for_proxy
+            self.internal_tasks.append(asyncio.create_task(self.ui_command_poller(get_command_for_proxy)))
+        
+        self.internal_tasks.append(asyncio.create_task(self.console_listener()))
+
         async with self.server:
-            await self.server.serve_forever()
+            try:
+                await self.server.serve_forever()
+            except asyncio.CancelledError:
+                pass
+            finally:
+                await self.stop()
+
+    async def stop(self):
+        """
+        Gracefully stop the proxy and all associated tasks.
+        """
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+        
+        for task in self.internal_tasks:
+            if not task.done():
+                task.cancel()
+        
+        if self.internal_tasks:
+            await asyncio.gather(*self.internal_tasks, return_exceptions=True)
+        
+        # Close all client connections
+        for client_id in list(self.active_clients.keys()):
+            # Note: handle_client normally cleans up, but we can force it
+            pass
+        
+        logger.info("[*] Proxy component stopped.")
 
     async def console_listener(self):
         loop = asyncio.get_event_loop()

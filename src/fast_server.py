@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
 import logging
+from .scanner import scan_mu_processes
+from .hosts_manager import HostsManager
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,38 @@ manager = ConnectionManager()
 packet_queue = asyncio.Queue()
 command_queue = asyncio.Queue()
 
-@app.websocket("/ws")
+@app.get("/api/scan")
+async def get_scan():
+    """
+    Returns a list of Mu Online processes and their connection details.
+    """
+    return scan_mu_processes()
+
+@app.post("/api/redirect")
+async def apply_redirect(data: dict):
+    """
+    Applies redirection for a specific domain.
+    """
+    domain = data.get("domain")
+    if not domain:
+        return {"status": "error", "message": "Domain is required"}
+    
+    hosts = HostsManager(domain)
+    # Note: We assume the server is already running with enough privileges 
+    # since it was launched from main.py
+    if hosts.apply_redirection():
+        return {"status": "success", "message": f"Redirected {domain} to 127.0.0.1"}
+    return {"status": "error", "message": "Failed to apply redirection (Check Admin privileges)"}
+
+@app.get("/api/status")
+async def get_status():
+    """
+    Returns the current configuration of the proxy.
+    """
+    return {
+        "status": "online",
+        "has_callback": True
+    }
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:

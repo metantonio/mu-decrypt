@@ -1,11 +1,80 @@
 import psutil
 import logging
+import re
+import os
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
 # Common Mu Online executable names
 MU_EXECUTABLES = ["main.exe", "mu.exe", "play.exe", "launcher.exe"]
+
+def find_potential_domains(file_path):
+    """
+    Search for domain-like strings in a binary file.
+    """
+    domains = set()
+    if not os.path.exists(file_path):
+        return []
+
+    # Regex for domains and IPs
+    domain_pattern = re.compile(rb'[a-zA-Z0-9.-]+\.(?:com|net|org|kr|br|ru|es|info|biz|me|top|xyz|link)')
+    ip_pattern = re.compile(rb'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+
+    try:
+        with open(file_path, 'rb') as f:
+            # Read in 1MB chunks to avoid memory issues
+            for chunk in iter(lambda: f.read(1024*1024), b''):
+                # Search for domains
+                for match in domain_pattern.findall(chunk):
+                    try:
+                        d = match.decode('ascii').lower()
+                        if '.' in d and len(d) > 4:
+                            domains.add(d)
+                    except: continue
+                # Search for IPs
+                for match in ip_pattern.findall(chunk):
+                    try:
+                        ip = match.decode('ascii')
+                        if ip != '127.0.0.1':
+                            domains.add(ip)
+                    except: continue
+    except Exception as e:
+        logger.error(f"Error scanning binary {file_path}: {e}")
+
+    # Prioritize 'connect' or 'mu' related domains
+    return sorted(list(domains), key=lambda x: ("connect" in x or "mu" in x), reverse=True)
+
+def scan_game_config(exe_path):
+    """
+    Search for .ini, .xml, .dat files in the executable's directory.
+    """
+    results = set()
+    game_dir = os.path.dirname(exe_path)
+    if not os.path.isdir(game_dir):
+        return []
+
+    for root, _, files in os.walk(game_dir):
+        for file in files:
+            if file.lower().endswith(('.ini', '.xml', '.dat', '.txt', '.cfg')):
+                file_path = os.path.join(root, file)
+                try:
+                    # Look for IP patterns in config files
+                    with open(file_path, 'r', errors='ignore') as f:
+                        content = f.read()
+                        ips = re.findall(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', content)
+                        for ip in ips:
+                            if ip != '127.0.0.1': results.add(ip)
+                        
+                        # Look for common server-list keywords
+                        domains = re.findall(r'[a-zA-Z0-9.-]+\.(?:com|net|org|kr|br)', content)
+                        for d in domains: results.add(d.lower())
+                except:
+                    continue
+        # Limit depth to game root for speed
+        break
+    
+    return list(results)
 
 def scan_mu_processes():
     """
@@ -26,7 +95,9 @@ def scan_mu_processes():
                     'name': proc.info['name'],
                     'exe': proc.info['exe'],
                     'ports': list(set(ports)),
-                    'remote_addresses': list(set(remote_addrs))
+                    'remote_addresses': list(set(remote_addrs)),
+                    'discovered_domains': find_potential_domains(proc.info['exe'])[:5], # Top 5
+                    'config_hints': scan_game_config(proc.info['exe'])[:5]
                 })
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
@@ -50,6 +121,10 @@ def print_scan_report(processes=None):
             print(f"    Ruta: {p['exe']}")
             print(f"    Puertos Locales Activos: {', '.join(map(str, p['ports'])) if p['ports'] else 'Ninguno'}")
             print(f"    Direcciones Remotas: {', '.join(p['remote_addresses']) if p['remote_addresses'] else 'Ninguna'}")
+            if p.get('discovered_domains'):
+                print(f"    Dominios Sugeridos: {', '.join(p['discovered_domains'])}")
+            if p.get('config_hints'):
+                print(f"    Pistas en Config: {', '.join(p['config_hints'])}")
             print("-" * 50)
     
     print("="*50 + "\n")
