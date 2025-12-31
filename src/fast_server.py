@@ -236,6 +236,29 @@ async def calibrate_memory(data: dict):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/memory/write")
+async def write_memory(data: dict):
+    global memory_instance
+    if not memory_instance:
+        return {"status": "error", "message": "Memory engine not running"}
+    
+    address_hex = data.get("address")
+    value = data.get("value")
+    type_name = data.get("type", "int")
+    
+    if not address_hex or value is None:
+        return {"status": "error", "message": "Address and value are required"}
+        
+    try:
+        address = int(address_hex, 16)
+        success = await asyncio.to_thread(memory_instance.write_value, address, value, type_name)
+        if success:
+            return {"status": "success", "message": f"Value {value} written to {address_hex}"}
+        else:
+            return {"status": "error", "message": "Failed to write memory. Try as admin?"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 async def send_memory_to_ui(stats: dict):
     """Streams memory stats to the UI via WebSocket"""
     global memory_stats, memory_instance

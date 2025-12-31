@@ -211,7 +211,8 @@ function App() {
     if (scanner.results.length === 0) return;
     const newSaved = scanner.results.map(res => ({
       address: res,
-      comment: `Búsqueda: ${scanner.searchValue} (${scanner.searchType})`,
+      comment: `Búsqueda: ${scanner.searchValue}`,
+      type: scanner.searchType,
       timestamp: new Date().toLocaleString()
     }));
     setSavedResults(prev => [...prev, ...newSaved].slice(-200)); // Limit to 200
@@ -269,6 +270,24 @@ function App() {
       if (data.status === 'success') {
         alert("✅ Conectado exitosamente a la memoria de " + name);
         setView('memory_scanner'); // Auto-switch to RAM Tools for convenience
+      } else {
+        alert("❌ Error: " + data.message);
+      }
+    } catch (e) {
+      alert("Error de conexión al servidor");
+    }
+  };
+
+  const writeMemory = async (address, value, type) => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/memory/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, value, type })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert("✅ Valor modificado correctamente en " + address);
       } else {
         alert("❌ Error: " + data.message);
       }
@@ -636,6 +655,24 @@ function App() {
                                 <button className="mini-btn discovery" onClick={() => handleAutoDiscovery(res)} title="Busca HP/MP cerca">🔍 AUTO</button>
                                 <button className="mini-btn hp" onClick={() => applyMemoryOffset(res, 'hp')}>HP</button>
                                 <button className="mini-btn mp" onClick={() => applyMemoryOffset(res, 'mp')}>MP</button>
+                                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', marginLeft: '4px', paddingLeft: '4px', display: 'flex', gap: '4px' }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Mod"
+                                    id={`mod-${res}`}
+                                    style={{ width: '45px', fontSize: '0.65rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px', padding: '2px 4px' }}
+                                  />
+                                  <button
+                                    className="mini-btn success"
+                                    onClick={() => {
+                                      const val = document.getElementById(`mod-${res}`).value;
+                                      if (val) writeMemory(res, val, scanner.searchType);
+                                    }}
+                                    style={{ padding: '2px 6px', fontSize: '0.65rem' }}
+                                  >
+                                    EDIT
+                                  </button>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -664,7 +701,7 @@ function App() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Comentario / Nota</th>
+                          <th>Etiqueta / Nota</th>
                           <th>Dirección</th>
                           <th>Acciones</th>
                         </tr>
@@ -687,6 +724,24 @@ function App() {
                                 <button className="mini-btn discovery" onClick={() => handleAutoDiscovery(item.address)}>🔍 AUTO</button>
                                 <button className="mini-btn hp" onClick={() => applyMemoryOffset(item.address, 'hp')}>HP</button>
                                 <button className="mini-btn mp" onClick={() => applyMemoryOffset(item.address, 'mp')}>MP</button>
+                                <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', marginLeft: '4px', paddingLeft: '4px', display: 'flex', gap: '4px' }}>
+                                  <input
+                                    type="text"
+                                    placeholder="Mod"
+                                    id={`mod-saved-${i}`}
+                                    style={{ width: '45px', fontSize: '0.65rem', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', borderRadius: '4px', padding: '2px 4px' }}
+                                  />
+                                  <button
+                                    className="mini-btn success"
+                                    onClick={() => {
+                                      const val = document.getElementById(`mod-saved-${i}`).value;
+                                      if (val) writeMemory(item.address, val, item.type || 'int');
+                                    }}
+                                    style={{ padding: '2px 6px', fontSize: '0.65rem' }}
+                                  >
+                                    EDIT
+                                  </button>
+                                </div>
                                 <button className="mini-btn error" onClick={() => deleteSavedResult(i)}>×</button>
                               </div>
                             </td>

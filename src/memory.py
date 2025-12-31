@@ -209,6 +209,27 @@ class MemoryManager:
             logger.error(f"Error en escaneo: {e}")
             return []
 
+    def write_value(self, address, value, value_type="int"):
+        """
+        Writes a value to a specific memory address.
+        """
+        if not self.pm:
+            return False
+            
+        try:
+            if value_type == "int":
+                self.pm.write_int(address, int(value))
+            elif value_type == "float":
+                self.pm.write_float(address, float(value))
+            else:
+                return False
+                
+            logger.info(f"[*] Escrito: {value} ({value_type}) en {hex(address)}")
+            return True
+        except Exception as e:
+            logger.error(f"[!] Error escribiendo en memoria ({hex(address)}): {e}")
+            return False
+
     def filter_candidates(self, value, value_type="int"):
         """
         Filters existing scan candidates for a new value.
