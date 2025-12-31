@@ -7,6 +7,7 @@ from src.hosts_manager import HostsManager
 from src.divert import DivertManager
 from src.memory import MemoryManager
 from src.fast_server import app, send_packet_to_ui, get_command_for_proxy, send_memory_to_ui
+import src.fast_server as fs
 import uvicorn
 
 # Global server config
@@ -34,56 +35,62 @@ async def main():
             hosts.run_as_admin()
             return
         
-        choice = input(f"[?] ¿Deseas redirigir {args.redirect} a 127.0.0.1 temporalmente? [S/n]: ").lower()
-        if choice in ['', 's', 'si', 'y', 'yes']:
-            if not hosts.apply_redirection():
-                return
-            # Verify if it actually worked (anti-cheat check)
-            if hosts.verify_resolution():
-                print(f"[✓] Verificación DNS: {args.redirect} redirigido con éxito.")
-            else:
-                print(f"[!] ADVERTENCIA: {args.redirect} NO resuelve a 127.0.0.1. El Anti-Cheat podría estar bloqueando.")
+        if args.ui:
+            print(f"[*] Modo UI: Aplicando redirección para {args.redirect} automáticamente...")
+            hosts.apply_redirection()
         else:
-            hosts = None # Don't cleanup if we didn't apply
+            choice = input(f"[?] ¿Deseas redirigir {args.redirect} a 127.0.0.1 temporalmente? [S/n]: ").lower()
+            if choice in ['', 's', 'si', 'y', 'yes']:
+                if not hosts.apply_redirection():
+                    return
+                # Verify if it actually worked (anti-cheat check)
+                if hosts.verify_resolution():
+                    print(f"[✓] Verificación DNS: {args.redirect} redirigido con éxito.")
+                else:
+                    print(f"[!] ADVERTENCIA: {args.redirect} NO resuelve a 127.0.0.1. El Anti-Cheat podría estar bloqueando.")
+            else:
+                hosts = None # Don't cleanup if we didn't apply
     elif args.redirect and args.transparent:
         print("[*] Modo Transparente activo: Se ignorará la redirección por archivo hosts.")
 
     if args.scan:
-        target = get_target_from_scan()
-        if target:
-            host, port, name, pid = target
-            local_port = args.port if args.port is not None else port
-            
-            print(f"[*] DEBUG: Port detected from scan: {port}")
-            print(f"[*] DEBUG: Local port decided: {local_port}")
-            print(f"[*] Iniciando proxy automático para {name}...")
-            print(f"[*] Objetivo: {host}:{port}")
-            print(f"[*] Puerto Local (Proxy): {local_port}")
-            
-            proxy = MuProxy(local_port, host, port)
-            
-            divert = None
-            if args.transparent:
-                divert = DivertManager(host, port, local_port)
-                if not divert.start():
-                    return
-            # Divert/Transparent mode configuration will be sent after server starts
-            
-            if args.ui:
-                proxy.ui_callback = send_packet_to_ui
-            
-            # Prepare support tasks
-            if args.memory:
-                mem = MemoryManager(name, pid=pid)
-                if mem.connect():
-                    import src.fast_server as fs
-                    fs.memory_instance = mem
-                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
-                    print("[*] Memoria conectada y monitoreando.")
+        if args.ui:
+            print("[*] Modo UI detectado: Puedes usar la pestaña 'Escáner' en el Dashboard.")
+            print("[*] Saltando escaneo inicial de terminal para evitar bloqueo...")
+        else:
+            target = get_target_from_scan()
+            if target:
+                host, port, name, pid = target
+                local_port = args.port if args.port is not None else port
+                
+                print(f"[*] DEBUG: Port detected from scan: {port}")
+                print(f"[*] DEBUG: Local port decided: {local_port}")
+                print(f"[*] Iniciando proxy automático para {name}...")
+                print(f"[*] Objetivo: {host}:{port}")
+                print(f"[*] Puerto Local (Proxy): {local_port}")
+                
+                proxy = MuProxy(local_port, host, port)
+                
+                divert = None
+                if args.transparent:
+                    divert = DivertManager(host, port, local_port)
+                    if not divert.start():
+                        return
+                
+                if args.ui:
+                    proxy.ui_callback = send_packet_to_ui
+                
+                # Prepare support tasks
+                if args.memory:
+                    mem = MemoryManager(name, pid=pid)
+                    if mem.connect():
+                        fs.memory_instance = mem
+                        mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
+                        print("[*] Memoria conectada y monitoreando.")
 
-            # Unified startup
-            await run_services(proxy, server_enabled=args.ui, transparent_mode=args.transparent, divert=divert, mem=mem)
-            return
+                # Unified startup
+                await run_services(proxy, server_enabled=args.ui, transparent_mode=args.transparent, divert=divert, mem=mem)
+                return
 
     # --- Mode: Manual Start ---
     local_port = args.port if args.port is not None else 55901

@@ -467,6 +467,29 @@ button.secondary {
 .button-row {
     display: flex;
     gap: 1rem;
+    align-items: center;
+}
+
+.btn-accent {
+    background: linear-gradient(135deg, var(--accent), #0891b2);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.85rem;
+}
+
+.btn-accent:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.btn-accent:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .scanner-results-container {
@@ -522,6 +545,18 @@ button.secondary {
 
 .mini-btn:hover {
     background: var(--primary);
+}
+
+.mini-btn.error:hover {
+    background: var(--error);
+    border-color: var(--error);
+}
+
+.saved-results-container {
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
 }
 
 .guide-box {

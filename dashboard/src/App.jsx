@@ -24,6 +24,10 @@ function App() {
 
   const [scanResults, setScanResults] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [savedResults, setSavedResults] = useState(() => {
+    const saved = localStorage.getItem('mu_saved_memory');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const ws = useRef(null);
   const packetListRef = useRef(null);
@@ -38,13 +42,17 @@ function App() {
   }, []);
 
   useEffect(() => {
+    localStorage.setItem('mu_saved_memory', JSON.stringify(savedResults));
+  }, [savedResults]);
+
+  useEffect(() => {
     if (packetListRef.current && view === 'packets') {
       packetListRef.current.scrollTop = packetListRef.current.scrollHeight;
     }
   }, [packets, selectedClientId, view]);
 
   const connectWS = () => {
-    ws.current = new WebSocket('ws://localhost:8000/ws');
+    ws.current = new WebSocket('ws://127.0.0.1:8000/ws');
 
     ws.current.onopen = () => {
       setIsConnected(true);
@@ -95,7 +103,7 @@ function App() {
 
   const pollStatus = async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/status');
+      const res = await fetch('http://127.0.0.1:8000/api/status');
       const data = await res.json();
       if (data.redirection) {
         setRedirectionStatus(data.redirection);
@@ -107,7 +115,7 @@ function App() {
     if (!scanner.searchValue) return;
     setScanner(prev => ({ ...prev, loading: true, message: isFilter ? 'Filtrando...' : 'Buscando inicial...' }));
     try {
-      const response = await fetch(`http://localhost:8000/api/memory/${isFilter ? 'filter' : 'search'}`, {
+      const response = await fetch(`http://127.0.0.1:8000/api/memory/${isFilter ? 'filter' : 'search'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: scanner.searchValue, type: scanner.searchType })
@@ -134,7 +142,7 @@ function App() {
     const offset = addr - memoryStats.base_address;
 
     try {
-      const response = await fetch('http://localhost:8000/api/memory/offsets', {
+      const response = await fetch('http://127.0.0.1:8000/api/memory/offsets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ [`${key}_offset`]: offset })
@@ -148,7 +156,7 @@ function App() {
   const startScan = async () => {
     setIsScanning(true);
     try {
-      const res = await fetch('http://localhost:8000/api/scan');
+      const res = await fetch('http://127.0.0.1:8000/api/scan');
       const data = await res.json();
       setScanResults(data);
     } catch (e) {
@@ -160,7 +168,7 @@ function App() {
   const handleAutoDiscovery = async (anchorHex) => {
     setScanner(prev => ({ ...prev, loading: true, message: 'Buscando HP/MP cerca...' }));
     try {
-      const response = await fetch('http://localhost:8000/api/memory/calibrate', {
+      const response = await fetch('http://127.0.0.1:8000/api/memory/calibrate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -176,7 +184,7 @@ function App() {
         setScanner(prev => ({ ...prev, loading: false }));
         if (data.offsets.hp) {
           const off = parseInt(data.offsets.hp, 16);
-          fetch('http://localhost:8000/api/memory/offsets', {
+          fetch('http://127.0.0.1:8000/api/memory/offsets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hp_offset: off, max_hp_offset: off + 4 })
@@ -184,7 +192,7 @@ function App() {
         }
         if (data.offsets.mp) {
           const off = parseInt(data.offsets.mp, 16);
-          fetch('http://localhost:8000/api/memory/offsets', {
+          fetch('http://127.0.0.1:8000/api/memory/offsets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mp_offset: off, max_mp_offset: off + 4 })
@@ -199,9 +207,60 @@ function App() {
     }
   };
 
+  const saveCurrentResults = () => {
+    if (scanner.results.length === 0) return;
+    const newSaved = scanner.results.map(res => ({
+      address: res,
+      comment: `Búsqueda: ${scanner.searchValue} (${scanner.searchType})`,
+      timestamp: new Date().toLocaleString()
+    }));
+    setSavedResults(prev => [...prev, ...newSaved].slice(-200)); // Limit to 200
+    setScanner(prev => ({ ...prev, message: `¡${newSaved.length} resultados guardados!` }));
+  };
+
+  const deleteSavedResult = (index) => {
+    setSavedResults(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const renameSavedResult = (index, newName) => {
+    setSavedResults(prev => {
+      const newList = [...prev];
+      newList[index].comment = newName;
+      return newList;
+    });
+  };
+
+  const exportSavedToJson = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(savedResults, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "mu_memory_offsets.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const importSavedFromJson = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target.result);
+        if (Array.isArray(json)) {
+          setSavedResults(json);
+          alert("✅ Direcciones importadas correctamente.");
+        }
+      } catch (err) {
+        alert("❌ Error al leer el archivo JSON.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const applyRedirect = async (domain) => {
     try {
-      const res = await fetch('http://localhost:8000/api/redirect', {
+      const res = await fetch('http://127.0.0.1:8000/api/redirect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain })
@@ -500,6 +559,14 @@ function App() {
                   >
                     Filtrar ({scanner.count})
                   </button>
+                  <button
+                    className="btn-accent"
+                    onClick={saveCurrentResults}
+                    disabled={scanner.results.length === 0}
+                    style={{ marginLeft: 'auto' }}
+                  >
+                    💾 Guardar Todo
+                  </button>
                 </div>
               </div>
 
@@ -542,6 +609,58 @@ function App() {
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {savedResults.length > 0 && (
+                <div className="saved-results-container" style={{ marginTop: '3rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                    <h3 style={{ margin: 0 }}>💾 Direcciones Guardadas</h3>
+                    <div style={{ display: 'flex', gap: '0.8rem' }}>
+                      <button className="mini-btn" onClick={exportSavedToJson}>📤 Exportar JSON</button>
+                      <label className="mini-btn" style={{ cursor: 'pointer' }}>
+                        📥 Importar JSON
+                        <input type="file" accept=".json" onChange={importSavedFromJson} style={{ display: 'none' }} />
+                      </label>
+                      <button className="mini-btn error" onClick={() => { if (confirm('¿Borrar todo?')) setSavedResults([]); }}>🗑️ Limpiar</button>
+                    </div>
+                  </div>
+
+                  <div className="scanner-results-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Comentario / Nota</th>
+                          <th>Dirección</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {savedResults.map((item, i) => (
+                          <tr key={i}>
+                            <td>
+                              <input
+                                type="text"
+                                value={item.comment}
+                                onChange={(e) => renameSavedResult(i, e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: 'white', width: '100%', fontSize: '0.8rem' }}
+                              />
+                            </td>
+                            <td className="addr" style={{ fontSize: '0.8rem' }}>{item.address}</td>
+                            <td>
+                              <div className="mini-actions">
+                                <button className="mini-btn lvl" onClick={() => applyMemoryOffset(item.address, 'level')}>LVL</button>
+                                <button className="mini-btn discovery" onClick={() => handleAutoDiscovery(item.address)}>🔍 AUTO</button>
+                                <button className="mini-btn hp" onClick={() => applyMemoryOffset(item.address, 'hp')}>HP</button>
+                                <button className="mini-btn mp" onClick={() => applyMemoryOffset(item.address, 'mp')}>MP</button>
+                                <button className="mini-btn error" onClick={() => deleteSavedResult(i)}>×</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
