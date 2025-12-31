@@ -26,9 +26,72 @@ class MemoryManager:
         self.on_update_callback = None
         self.candidates = [] # Stores potential addresses during a scan
 
-    def is_admin(self):
+    def enable_debug_privilege(self):
+        """
+        Enables SeDebugPrivilege for the current process.
+        Returns True if successful.
+        """
         try:
             import ctypes
+            from ctypes import wintypes
+
+            # Constants
+            SE_PRIVILEGE_ENABLED = 0x00000002
+            TOKEN_ADJUST_PRIVILEGES = 0x0020
+            TOKEN_QUERY = 0x0008
+
+            # Structs
+            class LUID(ctypes.Structure):
+                _fields_ = [("LowPart", wintypes.DWORD), ("HighPart", wintypes.LONG)]
+
+            class LUID_AND_ATTRIBUTES(ctypes.Structure):
+                _fields_ = [("Luid", LUID), ("Attributes", wintypes.DWORD)]
+
+            class TOKEN_PRIVILEGES(ctypes.Structure):
+                _fields_ = [("PrivilegeCount", wintypes.DWORD), ("Privileges", LUID_AND_ATTRIBUTES * 1)]
+
+            # 1. Open process token
+            hToken = wintypes.HANDLE()
+            if not ctypes.windll.advapi32.OpenProcessToken(
+                ctypes.windll.kernel32.GetCurrentProcess(),
+                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                ctypes.byref(hToken)
+            ):
+                return False
+
+            # 2. Lookup LUID for SeDebugPrivilege
+            luid = LUID()
+            if not ctypes.windll.advapi32.LookupPrivilegeValueW(None, "SeDebugPrivilege", ctypes.byref(luid)):
+                ctypes.windll.kernel32.CloseHandle(hToken)
+                return False
+
+            # 3. Adjust privileges
+            tp = TOKEN_PRIVILEGES()
+            tp.PrivilegeCount = 1
+            tp.Privileges[0].Luid = luid
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED
+
+            if not ctypes.windll.advapi32.AdjustTokenPrivileges(hToken, False, ctypes.byref(tp), 0, None, None):
+                err = ctypes.GetLastError()
+                ctypes.windll.kernel32.CloseHandle(hToken)
+                print(f"[!] AdjustTokenPrivileges falló (Error {err})")
+                return False
+
+            # Even if returns True, we must check for ERROR_NOT_ALL_ASSIGNED
+            res = ctypes.GetLastError()
+            if res == 0x514: # ERROR_NOT_ALL_ASSIGNED
+                print("[!] SeDebugPrivilege no pudo ser asignado (No tienes permisos suficientes).")
+            else:
+                print("[*] SeDebugPrivilege habilitado con éxito.")
+
+            ctypes.windll.kernel32.CloseHandle(hToken)
+            return True
+        except Exception as e:
+            print(f"[!] Error habilitando SeDebugPrivilege: {e}")
+            return False
+
+    def is_admin(self):
+        try:
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
         except:
             return False
@@ -42,13 +105,51 @@ class MemoryManager:
             logger.error("[!] Error: Mu-Decrypt debe ejecutarse como ADMINISTRADOR para leer la memoria.")
             return False
 
+        # Try to enable SeDebugPrivilege first
+        self.enable_debug_privilege()
+
         try:
             print(f"[*] Abriendo proceso Mu (PID: {self.pid or 'Auto'})...")
             if self.pid:
                 self.pm = Pymem()
+                # Open with PROCESS_ALL_ACCESS (0x1F0FFF) for full control
                 self.pm.open_process_from_id(self.pid)
             else:
                 self.pm = Pymem(self.process_name)
+            
+            # Upgrade handle if necessary (ensure PROCESS_ALL_ACCESS)
+            # This is critical for VirtualProtectEx to work
+            PROCESS_ALL_ACCESS = 0x1F0FFF
+            if self.pm.process_handle:
+                # Try PROCESS_ALL_ACCESS first
+                PROCESS_ALL_ACCESS = 0x1F0FFF
+                new_handle = ctypes.windll.kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, self.pm.process_id)
+                
+                if not new_handle:
+                    err = ctypes.GetLastError()
+                    print(f"[*] OpenProcess (ALL_ACCESS) denegado (Error {err}). Intentando permisos específicos...")
+                    
+                    # Fallback: Just what we need for writing
+                    # VM_OPERATION (0x8) | VM_READ (0x10) | VM_WRITE (0x20) | QUERY_INFORMATION (0x400)
+                    SPECIFIC_RIGHTS = 0x8 | 0x10 | 0x20 | 0x400
+                    new_handle = ctypes.windll.kernel32.OpenProcess(SPECIFIC_RIGHTS, False, self.pm.process_id)
+                
+                if new_handle:
+                    print(f"[*] Handle de proceso mejorado obtenido con éxito.")
+                    
+                    # Rights Audit
+                    try:
+                        flags = wintypes.DWORD()
+                        if ctypes.windll.kernel32.GetHandleInformation(new_handle, ctypes.byref(flags)):
+                            print(f"[*] Información del Handle: {flags.value}")
+                    except: pass
+
+                    ctypes.windll.kernel32.CloseHandle(self.pm.process_handle)
+                    self.pm.process_handle = new_handle
+                else:
+                    err = ctypes.GetLastError()
+                    print(f"[!] Falló la adquisición del handle con permisos de escritura (Error {err}).")
+                    print("[!] Este es un bloqueo de nivel Driver (Anti-Cheat). Intentaremos bypass quirúrgico durante la escritura.")
             
             print(f"[*] Proceso validado. Verificando punto de entrada (Fast Path)...")
             
@@ -211,47 +312,126 @@ class MemoryManager:
 
     def write_value(self, address, value, value_type="int"):
         """
-        Writes a value to a specific memory address with protection bypass.
+        Writes a value to a specific memory address with surgical handle fallback.
         """
-        if not self.pm or not self.pm.process_handle:
+        if not self.pm:
             return False
             
         try:
-            # size for VirtualProtect
-            size = 4 if value_type == "float" or value_type == "int" else 8
-            
-            # 1. Temporarily change protection to READWRITE (Bypass Error 5)
-            PAGE_EXECUTE_READWRITE = 0x40
-            old_protect = wintypes.DWORD()
-            ctypes.windll.kernel32.VirtualProtectEx(
-                self.pm.process_handle, 
-                ctypes.c_void_p(address), 
-                size, 
-                PAGE_EXECUTE_READWRITE, 
-                ctypes.byref(old_protect)
-            )
-
-            # 2. Perform write
+            import struct
+            # size and buffer for direct WriteProcessMemory
             if value_type == "int":
-                self.pm.write_int(address, int(value))
+                data = struct.pack("<i", int(value))
+                size = 4
             elif value_type == "float":
-                self.pm.write_float(address, float(value))
+                data = struct.pack("<f", float(value))
+                size = 4
             else:
                 return False
-                
-            # 3. Restore original protection
+            
+            # --- PHASE 1: Try with current handle ---
+            success = self._perform_raw_write(self.pm.process_handle, address, data, size, value, value_type)
+            
+            # --- PHASE 2: Surgical Bypass (If Phase 1 failed with Access Denied) ---
+            if not success:
+                err = ctypes.GetLastError()
+                if err == 5: # Access Denied
+                    logger.info(f"[*] Acceso denegado con handle principal. Intentando bypass con handle quirúrgico...")
+                    
+                    # Minimal rights: Just VM_WRITE and VM_OPERATION
+                    MINIMAL_WRITE_RIGHTS = 0x20 | 0x08
+                    temp_handle = ctypes.windll.kernel32.OpenProcess(MINIMAL_WRITE_RIGHTS, False, self.pm.process_id)
+                    
+                    if temp_handle:
+                        success = self._perform_raw_write(temp_handle, address, data, size, value, value_type, "Quirúrgico")
+                        ctypes.windll.kernel32.CloseHandle(temp_handle)
+                    else:
+                        logger.error(f"[!] No se pudo obtener ni siquiera un handle quirúrgico (Error {ctypes.GetLastError()})")
+            
+            return success
+
+        except Exception as e:
+            logger.error(f"[!] Excepción en write_value ({hex(address)}): {e}")
+            return False
+
+    def _perform_raw_write(self, handle, address, data, size, value, value_type, label="Principal"):
+        """
+        Internal helper with NT-level bypass and stealth logic.
+        """
+        if not handle:
+            return False
+
+        # 0. Diagnostic Audit & Selective Protection
+        needs_protect = True
+        try:
+            class MEMORY_BASIC_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("BaseAddress", ctypes.c_void_p),
+                    ("AllocationBase", ctypes.c_void_p),
+                    ("AllocationProtect", wintypes.DWORD),
+                    ("RegionSize", ctypes.c_size_t),
+                    ("State", wintypes.DWORD),
+                    ("Protect", wintypes.DWORD),
+                    ("Type", wintypes.DWORD),
+                ]
+            
+            mbi = MEMORY_BASIC_INFORMATION()
+            if ctypes.windll.kernel32.VirtualQueryEx(handle, ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi)):
+                logger.info(f"[*] Audit RAM ({label}) @ {hex(address)}: State={hex(mbi.State)}, Protect={hex(mbi.Protect)}")
+                # 0x04 = PAGE_READWRITE, 0x40 = PAGE_EXECUTE_READWRITE
+                if mbi.Protect in [0x04, 0x40]:
+                    needs_protect = False
+                    logger.debug(f"[*] Página ya es escribible ({hex(mbi.Protect)}). Omitiendo VirtualProtect.")
+        except: pass
+
+        # 1. Protection (Only if needed)
+        old_protect = wintypes.DWORD()
+        vp_success = False
+        if needs_protect:
+            PAGE_READWRITE = 0x04
+            vp_success = ctypes.windll.kernel32.VirtualProtectEx(
+                handle, 
+                ctypes.c_void_p(address), 
+                size, 
+                PAGE_READWRITE, 
+                ctypes.byref(old_protect)
+            )
+            if not vp_success:
+                logger.error(f"[!] VirtualProtectEx ({label}) falló: Error {ctypes.GetLastError()}")
+
+        # 2. NT-Level Write: Direct Syscall to ntdll
+        # This bypasses hooks in kernel32.WriteProcessMemory
+        bytes_written = ctypes.c_size_t(0)
+        try:
+            # NTSTATUS NtWriteVirtualMemory(HANDLE, PVOID, PVOID, ULONG, PULONG)
+            nt_status = ctypes.windll.ntdll.NtWriteVirtualMemory(
+                handle,
+                ctypes.c_void_p(address),
+                data,
+                size,
+                ctypes.byref(bytes_written)
+            )
+            write_success = (nt_status == 0) # STATUS_SUCCESS
+            if not write_success:
+                logger.error(f"[!] NtWriteVirtualMemory ({label}) falló: NTSTATUS {hex(nt_status & 0xffffffff)}")
+        except Exception as e:
+            logger.error(f"[!] Error llamando a ntdll: {e}")
+            write_success = False
+
+        # 3. Restore protection
+        if vp_success:
             ctypes.windll.kernel32.VirtualProtectEx(
-                self.pm.process_handle, 
+                handle, 
                 ctypes.c_void_p(address), 
                 size, 
                 old_protect, 
                 ctypes.byref(old_protect)
             )
 
-            logger.info(f"[*] Escrito (Protección Bypassed): {value} ({value_type}) en {hex(address)}")
+        if write_success:
+            logger.info(f"[*] ¡BYPASS NT ÉXITO! Escrito ({label}): {value} ({value_type}) en {hex(address)}")
             return True
-        except Exception as e:
-            logger.error(f"[!] Error escribiendo en memoria ({hex(address)}): {e}")
+        else:
             return False
 
     def filter_candidates(self, value, value_type="int"):
