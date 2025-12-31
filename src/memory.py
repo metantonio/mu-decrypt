@@ -1,6 +1,8 @@
 import logging
 import time
 import threading
+import ctypes
+from ctypes import wintypes
 try:
     from pymem import Pymem
     from pymem.process import module_from_name
@@ -68,8 +70,6 @@ class MemoryManager:
             # Fallback: If Fast Path fails, try low-level Psapi ONLY if not already found
             print("[*] MZ Header no encontrado. Intentando detección dinámica...")
             try:
-                import ctypes
-                from ctypes import wintypes
                 Psapi = ctypes.WinDLL('Psapi.dll')
                 h_modules = (wintypes.HMODULE * 1)()
                 cb_needed = wintypes.DWORD()
@@ -221,7 +221,6 @@ class MemoryManager:
             size = 4 if value_type == "float" or value_type == "int" else 8
             
             # 1. Temporarily change protection to READWRITE (Bypass Error 5)
-            from ctypes import wintypes
             PAGE_EXECUTE_READWRITE = 0x40
             old_protect = wintypes.DWORD()
             ctypes.windll.kernel32.VirtualProtectEx(
