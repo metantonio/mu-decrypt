@@ -73,18 +73,29 @@ async def main():
                 proxy.ui_callback = send_packet_to_ui
             
             mem = None
-            if args.memory:
-                mem = MemoryManager(name, pid=pid) # Use specific PID from scan
-                loop = asyncio.get_event_loop()
-                if mem.connect():
-                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
-                
+            try:
+                if args.memory:
+                    mem = MemoryManager(name, pid=pid) # Use specific PID from scan
+                    loop = asyncio.get_event_loop()
+                    if mem.connect():
+                        import src.fast_server as fast_server
+                        fast_server.memory_instance = mem
+                        mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
+                        print("[*] Iniciando hilos de soporte...")
+            except Exception as e:
+                print(f"[!] Error crítico durante inicialización: {e}")
+                import traceback
+                traceback.print_exc()
+                return
+
             try:
                 if args.ui:
+                    print(f"[*] Configurando Dashboard en puerto 8000...")
                     print(f"[*] Dashboard disponible en: http://localhost:8000")
-                    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="error")
+                    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
                     server = uvicorn.Server(config)
                     
+                    print("[*] Lanzando loop principal (Proxy + UI)...")
                     await asyncio.gather(
                         proxy.start(),
                         server.serve()
@@ -98,6 +109,8 @@ async def main():
                     divert.stop()
                 if mem:
                     mem.stop()
+                if proxy:
+                    await proxy.stop()
                 HostsManager.clear_all_redirections()
             return
         return
@@ -130,10 +143,14 @@ async def main():
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\n[!] Deteniendo proxy y servidores...")
     except Exception as e:
-        print(f"\n[!] Error: {e}")
+        print(f"\n[!] Error crítico: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         if 'divert' in locals() and divert:
             divert.stop()
+        if 'proxy' in locals() and proxy:
+            await proxy.stop()
         HostsManager.clear_all_redirections()
 
 if __name__ == "__main__":

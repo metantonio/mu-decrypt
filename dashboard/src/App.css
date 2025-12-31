@@ -419,3 +419,46 @@ button.secondary {
     font-size: 0.9rem;
     color: var(--text-dim);
 }
+
+/* RAM Tools View */
+.memory-scanner-view {
+  padding: 2rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.scanner-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 2rem;
+}
+.scanner-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  border-radius: 12px;
+}
+.input-row { display: flex; gap: 1rem; }
+.scanner-controls input { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 0.8rem; border-radius: 8px; color: white; }
+.scanner-controls select { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 0.8rem; border-radius: 8px; color: white; }
+.button-row { display: flex; gap: 1rem; }
+.scanner-results-container {
+  margin-top: 2rem;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 8px;
+}
+.scanner-results-container table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.scanner-results-container th { padding: 0.8rem; text-align: left; opacity: 0.6; }
+.scanner-results-container td { padding: 0.6rem 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.02); }
+.addr { color: var(--accent); font-family: monospace; }
+.offs { color: var(--primary); font-family: monospace; font-weight: bold; }
+.mini-actions { display: flex; gap: 0.4rem; }
+.mini-btn { padding: 0.3rem 0.5rem; font-size: 0.65rem; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 4px; cursor: pointer; }
+.mini-btn:hover { background: var(--primary); }
+.guide-box { margin-top: 2rem; padding: 1rem; background: rgba(79, 70, 229, 0.05); border-left: 3px solid var(--primary); border-radius: 4px; font-size: 0.85rem; }
+.status-msg { color: var(--primary); font-size: 0.85rem; font-weight: bold; }
+.base-hint { opacity: 0.5; font-size: 0.75rem; font-family: monospace; }

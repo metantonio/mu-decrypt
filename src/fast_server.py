@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
@@ -11,10 +11,20 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"[*] API Request: {request.method} {request.url.path}")
+    return await call_next(request)
+
 # Track active redirection for UI diagnostics
 active_redirection = {"domain": None, "status": "none", "mode": "hosts"}
 transparent_mode_active = False # Set by main.py if --transparent is used
-memory_stats = {"hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0, "connected": False}
+memory_instance = None # Injected by main.py
+memory_stats = {
+    "hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0,
+    "hp_offset": 0, "max_hp_offset": 0, "mp_offset": 0, "max_mp_offset": 0, "level_offset": 0,
+    "connected": False, "base_address": 0
+}
 memory_offsets = {"hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0}
 
 # Enable CORS for frontend development
@@ -24,6 +34,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 class ConnectionManager:
@@ -146,12 +157,39 @@ async def update_offsets(data: dict):
     memory_offsets.update(data)
     return {"status": "success", "offsets": memory_offsets}
 
+@app.post("/api/memory/search")
+async def search_memory(data: dict):
+    global memory_instance
+    if not memory_instance:
+        return {"status": "error", "message": "Memory engine not running"}
+    value = data.get("value")
+    type_name = data.get("type", "int")
+    if value is None: return {"status": "error", "message": "Value is required"}
+    
+    results = memory_instance.search_value(float(value) if type_name == "float" else int(value), type_name)
+    return {"status": "success", "count": len(results), "results": [hex(r) for r in results[:100]]}
+
+@app.post("/api/memory/filter")
+async def filter_memory(data: dict):
+    global memory_instance
+    if not memory_instance:
+        return {"status": "error", "message": "Memory engine not running"}
+    value = data.get("value")
+    type_name = data.get("type", "int")
+    if value is None: return {"status": "error", "message": "Value is required"}
+    
+    results = memory_instance.filter_candidates(float(value) if type_name == "float" else int(value), type_name)
+    return {"status": "success", "count": len(results), "results": [hex(r) for r in results[:100]]}
+
 async def send_memory_to_ui(stats: dict):
     """Streams memory stats to the UI via WebSocket"""
-    global memory_stats
-    print(f"[*] WS BROADCAST MEMORY: Enviando stats a {len(manager.active_connections)} clientes UI.")
+    global memory_stats, memory_instance
+    # print(f"[*] WS BROADCAST MEMORY: Enviando stats a {len(manager.active_connections)} clientes UI.")
     memory_stats.update(stats)
     memory_stats["connected"] = True
+    if memory_instance:
+        memory_stats["base_address"] = memory_instance.base_address
+    
     await manager.broadcast({
         "type": "memory",
         "data": memory_stats

@@ -11,7 +11,15 @@ function App() {
   const [injectTarget, setInjectTarget] = useState('s');
   const [broadcastMode, setBroadcastMode] = useState(true);
   const [redirectionStatus, setRedirectionStatus] = useState({ domain: null, status: 'none', mode: 'hosts' });
-  const [memoryStats, setMemoryStats] = useState({ hp: 0, max_hp: 0, mp: 0, max_mp: 0, level: 0, connected: false });
+  const [memoryStats, setMemoryStats] = useState({ hp: 0, max_hp: 0, mp: 0, max_mp: 0, level: 0, connected: false, base_address: 0 });
+  const [scanner, setScanner] = useState({
+    searchValue: '',
+    searchType: 'int',
+    results: [],
+    count: 0,
+    loading: false,
+    message: ''
+  });
 
   const [scanResults, setScanResults] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -45,6 +53,7 @@ function App() {
 
     ws.current.onmessage = (event) => {
       const message = JSON.parse(event.data);
+      console.log('WS Message Received:', message);
       if (message.type === 'client_connected') {
         setActiveClients(prev => {
           if (!prev.includes(message.client_id)) {
@@ -69,8 +78,10 @@ function App() {
             if (!selectedClientId) setSelectedClientId(message.data.client_id);
             return [...prev, message.data.client_id];
           }
+          return prev;
         });
       } else if (message.type === 'memory') {
+        console.log('Updating Memory Stats:', message.data);
         setMemoryStats(message.data);
       }
     };
@@ -87,6 +98,48 @@ function App() {
       const data = await res.json();
       if (data.redirection) {
         setRedirectionStatus(data.redirection);
+      }
+    } catch (e) { }
+  };
+
+  const handleMemorySearch = async (isFilter = false) => {
+    if (!scanner.searchValue) return;
+    setScanner(prev => ({ ...prev, loading: true, message: isFilter ? 'Filtrando...' : 'Buscando inicial...' }));
+    try {
+      const response = await fetch(`http://localhost:8000/api/memory/${isFilter ? 'filter' : 'search'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: scanner.searchValue, type: scanner.searchType })
+      });
+      const data = await response.json();
+      setScanner(prev => ({
+        ...prev,
+        results: data.results || [],
+        count: data.count || 0,
+        loading: false,
+        message: data.status === 'success' ? `Resultados: ${data.count}` : data.message
+      }));
+    } catch (error) {
+      setScanner(prev => ({ ...prev, loading: false, message: 'Error de conexión' }));
+    }
+  };
+
+  const applyMemoryOffset = async (addressHex, key) => {
+    if (!memoryStats.base_address) {
+      setScanner(prev => ({ ...prev, message: 'Falta Base Address. ¿Está el juego abierto?' }));
+      return;
+    }
+    const addr = parseInt(addressHex, 16);
+    const offset = addr - memoryStats.base_address;
+
+    try {
+      const response = await fetch('http://localhost:8000/api/memory/offsets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [`${key}_offset`]: offset })
+      });
+      if (response.ok) {
+        setScanner(prev => ({ ...prev, message: `Offset ${key} aplicado: 0x${offset.toString(16)}` }));
       }
     } catch (e) { }
   };
@@ -142,6 +195,7 @@ function App() {
         <nav className="view-selector">
           <button className={view === 'packets' ? 'active' : ''} onClick={() => setView('packets')}>Paquetes</button>
           <button className={view === 'scanner' ? 'active' : ''} onClick={() => setView('scanner')}>Escáner</button>
+          <button className={view === 'memory_scanner' ? 'active' : ''} onClick={() => setView('memory_scanner')}>RAM Tools</button>
         </nav>
 
         <div className="header-status">
@@ -342,6 +396,100 @@ function App() {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        )}
+
+        {view === 'memory_scanner' && (
+          <div className="memory-scanner-view">
+            <div className="scanner-card">
+              <h3>🔍 Buscador de Memoria (Interno)</h3>
+              <p className="scanner-hint">Encuentra los Offsets de Nivel, HP o MP sin Cheat Engine.</p>
+
+              <div className="scanner-controls">
+                <div className="input-row">
+                  <input
+                    type="text"
+                    placeholder="Valor (ej: 400)"
+                    value={scanner.searchValue}
+                    onChange={(e) => setScanner({ ...scanner, searchValue: e.target.value })}
+                  />
+                  <select
+                    value={scanner.searchType}
+                    onChange={(e) => setScanner({ ...scanner, searchType: e.target.value })}
+                  >
+                    <option value="int">Entero (Level)</option>
+                    <option value="float">Float (HP/MP)</option>
+                  </select>
+                </div>
+                <div className="button-row">
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleMemorySearch(false)}
+                    disabled={scanner.loading}
+                  >
+                    Primer Escaneo
+                  </button>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => handleMemorySearch(true)}
+                    disabled={scanner.loading || scanner.results.length === 0}
+                  >
+                    Filtrar ({scanner.count})
+                  </button>
+                </div>
+              </div>
+
+              <div className="scanner-status">
+                {scanner.message && <div className="status-msg">{scanner.message}</div>}
+                {memoryStats.base_address !== 0 && (
+                  <div className="base-hint">Base Address: 0x{memoryStats.base_address.toString(16)}</div>
+                )}
+              </div>
+
+              {scanner.results.length > 0 && (
+                <div className="scanner-results-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Dirección</th>
+                        <th>Offset</th>
+                        <th>Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanner.results.slice(0, 100).map((res, i) => {
+                        const addr = parseInt(res, 16);
+                        const offset = addr - memoryStats.base_address;
+                        const offsetHex = "0x" + offset.toString(16).toUpperCase();
+                        return (
+                          <tr key={i}>
+                            <td className="addr">{res}</td>
+                            <td className="offs">{offsetHex}</td>
+                            <td>
+                              <div className="mini-actions">
+                                <button className="mini-btn lvl" onClick={() => applyMemoryOffset(res, 'level')}>LVL</button>
+                                <button className="mini-btn hp" onClick={() => applyMemoryOffset(res, 'hp')}>HP</button>
+                                <button className="mini-btn mp" onClick={() => applyMemoryOffset(res, 'mp')}>MP</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="guide-box">
+                <h4>📖 Cómo encontrar los Offsets:</h4>
+                <ol>
+                  <li>Pon tu <b>Nivel</b> actual y pulsa "Primer Escaneo".</li>
+                  <li>Sube un nivel en el juego.</li>
+                  <li>Pon el <b>Nuevo Nivel</b> y pulsa "Filtrar".</li>
+                  <li>Cuando queden pocos resultados, usa el botón <b>LVL</b>.</li>
+                </ol>
+              </div>
             </div>
           </div>
         )}

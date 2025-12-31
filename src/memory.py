@@ -16,9 +16,13 @@ class MemoryManager:
         self.pm = None
         self.base_address = None
         self.running = False
-        self.stats = {"hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0}
+        self.stats = {
+            "hp": 0, "max_hp": 0, "mp": 0, "max_mp": 0, "level": 0,
+            "hp_offset": 0, "max_hp_offset": 0, "mp_offset": 0, "max_mp_offset": 0, "level_offset": 0
+        }
         self.thread = None
         self.on_update_callback = None
+        self.candidates = [] # Stores potential addresses during a scan
 
     def is_admin(self):
         try:
@@ -98,29 +102,79 @@ class MemoryManager:
         """Allows updating stats externally (useful if we find offsets via Cheat Engine)"""
         self.stats.update(new_stats)
 
-    def find_addresses_by_value(self, value, size=4):
+    def search_value(self, value, value_type="int"):
         """
-        Scans memory for a specific value. Useful to find 'Level'.
-        Returns a list of addresses.
+        Initial memory scan for a specific value.
         """
         if not self.pm:
             return []
             
-        import pymem.memory
-        found_addresses = []
+        self.candidates = []
+        logger.info(f"[*] Escaneando memoria: Buscando {value} ({value_type})...")
+        
         try:
-            # We scan the main module memory
-            process_handle = self.pm.process_handle
-            # Simple scan (might be slow for whole RAM, but good for main module)
-            # This is a simplified version of a pattern scan
-            # In a real scenario, we'd use self.pm.pattern_scan_all
-            logger.info(f"[*] Escaneando memoria por el valor: {value}...")
-            # For now, we suggest the user to use Cheat Engine to find the base 
-            # and we will focus on pointer resolution once we have the anchor.
-            pass
+            # We scan the main module memory regions
+            # To be efficient, we iterate through readable memory pages
+            import ctypes
+            from pymem.ressources.structure import MEMORY_BASIC_INFORMATION
+            
+            address = 0
+            while address < 0x7FFFFFFF: # typical 32-bit user space range
+                mbi = MEMORY_BASIC_INFORMATION()
+                if ctypes.windll.kernel32.VirtualQueryEx(self.pm.process_handle, ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi)):
+                    # Check if memory is committed, accessible, and not protected
+                    if mbi.State == 0x1000 and (mbi.Protect & 0x100) == 0: # MEM_COMMIT and not PAGE_GUARD
+                        # Read and check values in this region
+                        try:
+                            data = self.pm.read_bytes(mbi.BaseAddress, mbi.RegionSize)
+                            for i in range(0, len(data) - 4, 4):
+                                if value_type == "int":
+                                    val = int.from_bytes(data[i:i+4], byteorder='little')
+                                    if val == value:
+                                        self.candidates.append(mbi.BaseAddress + i)
+                                elif value_type == "float":
+                                    import struct
+                                    try:
+                                        val = struct.unpack('f', data[i:i+4])[0]
+                                        if abs(val - value) < 0.1: # Float epsilon
+                                            self.candidates.append(mbi.BaseAddress + i)
+                                    except: pass
+                        except:
+                            pass
+                    address = mbi.BaseAddress + mbi.RegionSize
+                else:
+                    break
+                    
+            logger.info(f"[*] Escaneo finalizado. {len(self.candidates)} candidatos encontrados.")
+            return self.candidates
         except Exception as e:
-            logger.error(f"Error escaneando: {e}")
-        return found_addresses
+            logger.error(f"Error en escaneo: {e}")
+            return []
+
+    def filter_candidates(self, value, value_type="int"):
+        """
+        Filters existing scan candidates for a new value.
+        """
+        if not self.candidates or not self.pm:
+            return []
+            
+        new_candidates = []
+        logger.info(f"[*] Filtrando {len(self.candidates)} candidatos: Buscando {value}...")
+        
+        for addr in self.candidates:
+            try:
+                if value_type == "int":
+                    if self.pm.read_int(addr) == value:
+                        new_candidates.append(addr)
+                elif value_type == "float":
+                    if abs(self.pm.read_float(addr) - value) < 0.1:
+                        new_candidates.append(addr)
+            except:
+                continue
+                
+        self.candidates = new_candidates
+        logger.info(f"[*] Filtrado finalizado. Quedan {len(self.candidates)} candidatos.")
+        return self.candidates
 
     def read_at_offset(self, offset, type="int"):
         if not self.base_address or not self.pm:
