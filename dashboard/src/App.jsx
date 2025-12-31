@@ -683,20 +683,24 @@ function App() {
                 </div>
               )}
 
-              {savedResults.length > 0 && (
-                <div className="saved-results-container" style={{ marginTop: '3rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                    <h3 style={{ margin: 0 }}>💾 Direcciones Guardadas</h3>
-                    <div style={{ display: 'flex', gap: '0.8rem' }}>
+              <div className="saved-results-container" style={{ marginTop: '3rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ margin: 0 }}>💾 Direcciones Guardadas</h3>
+                  <div style={{ display: 'flex', gap: '0.8rem' }}>
+                    {savedResults.length > 0 && (
                       <button className="mini-btn" onClick={exportSavedToJson}>📤 Exportar JSON</button>
-                      <label className="mini-btn" style={{ cursor: 'pointer' }}>
-                        📥 Importar JSON
-                        <input type="file" accept=".json" onChange={importSavedFromJson} style={{ display: 'none' }} />
-                      </label>
+                    )}
+                    <label className="mini-btn" style={{ cursor: 'pointer' }}>
+                      📥 Importar JSON
+                      <input type="file" accept=".json" onChange={importSavedFromJson} style={{ display: 'none' }} />
+                    </label>
+                    {savedResults.length > 0 && (
                       <button className="mini-btn error" onClick={() => { if (confirm('¿Borrar todo?')) setSavedResults([]); }}>🗑️ Limpiar</button>
-                    </div>
+                    )}
                   </div>
+                </div>
 
+                {savedResults.length > 0 ? (
                   <div className="scanner-results-container">
                     <table>
                       <thead>
@@ -750,8 +754,13 @@ function App() {
                       </tbody>
                     </table>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                    <p style={{ margin: 0, opacity: 0.5, fontSize: '0.9rem' }}>No hay direcciones guardadas aún.</p>
+                    <p style={{ margin: '0.5rem 0 0', opacity: 0.3, fontSize: '0.75rem' }}>Usa el escáner para encontrar valores o importa un archivo JSON.</p>
+                  </div>
+                )}
+              </div>
 
               <div className="guide-box">
                 <div className="guide-header">
