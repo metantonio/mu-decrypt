@@ -258,6 +258,25 @@ function App() {
     reader.readAsText(file);
   };
 
+  const attachMemory = async (pid, name) => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/memory/attach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid, name })
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        alert("✅ Conectado exitosamente a la memoria de " + name);
+        setView('memory_scanner'); // Auto-switch to RAM Tools for convenience
+      } else {
+        alert("❌ Error: " + data.message);
+      }
+    } catch (e) {
+      alert("Error de conexión al servidor");
+    }
+  };
+
   const applyRedirect = async (domain) => {
     try {
       const res = await fetch('http://127.0.0.1:8000/api/redirect', {
@@ -341,9 +360,15 @@ function App() {
           )}
         </div>
 
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3>Estadísticas RAM</h3>
+          <span className={`status-badge ${memoryStats.connected ? 'success' : 'error'}`} style={{ fontSize: '0.7rem' }}>
+            {memoryStats.connected ? 'ONLINE' : 'OFFLINE'}
+          </span>
+        </div>
         {memoryStats.connected && (
-          <div className="memory-hud" style={{ marginTop: '2rem' }}>
-            <h3>Estado del Personaje</h3>
+          <div className="memory-hud">
+            <h3 style={{ fontSize: '0.8rem', opacity: 0.6, marginBottom: '1rem' }}>Estado del Personaje</h3>
             <div className="stat-bar-container">
               <label>HP: {memoryStats.hp} / {memoryStats.max_hp}</label>
               <div className="stat-bar hp" style={{ width: `${(memoryStats.hp / memoryStats.max_hp) * 100 || 0}%` }}></div>
@@ -455,8 +480,17 @@ function App() {
               ) : (
                 scanResults.map((p, i) => (
                   <div key={i} className="process-card">
-                    <div className="process-title">
-                      <strong>{p.name}</strong> <span style={{ opacity: 0.5 }}>PID: {p.pid}</span>
+                    <div className="process-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong>{p.name}</strong> <span style={{ opacity: 0.5 }}>PID: {p.pid}</span>
+                      </div>
+                      <button
+                        className="mini-btn success"
+                        onClick={() => attachMemory(p.pid, p.name)}
+                        style={{ padding: '4px 12px', fontSize: '0.75rem' }}
+                      >
+                        🔌 Conectar Memoria
+                      </button>
                     </div>
                     <div className="process-detail" style={{ marginBottom: '1rem' }}>{p.exe}</div>
 

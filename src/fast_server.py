@@ -151,6 +151,37 @@ async def websocket_endpoint(websocket: WebSocket):
 async def get_memory_stats():
     return {**memory_stats, "offsets": memory_offsets}
 
+@app.post("/api/memory/attach")
+async def attach_memory(data: dict):
+    global memory_instance
+    pid = data.get("pid")
+    name = data.get("name", "main.exe")
+    
+    if not pid:
+        return {"status": "error", "message": "PID is required"}
+        
+    try:
+        # Check if already connected to this PID
+        if memory_instance and memory_instance.pid == pid and memory_instance.running:
+            return {"status": "success", "message": "Already connected to this process"}
+
+        # Stop old instance if exists
+        if memory_instance:
+            memory_instance.stop()
+
+        mem = MemoryManager(name, pid=pid)
+        if mem.connect():
+            memory_instance = mem
+            loop = asyncio.get_event_loop()
+            mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
+            print(f"[*] API: Memoria conectada exitosamente a {name} (PID: {pid})")
+            return {"status": "success", "message": f"Attached to {name} ({pid})"}
+        else:
+            return {"status": "error", "message": "Failed to connect to process. Are you admin?"}
+    except Exception as e:
+        logger.error(f"Error attaching memory: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.post("/api/memory/offsets")
 async def update_offsets(data: dict):
     global memory_offsets, memory_instance
@@ -169,7 +200,8 @@ async def search_memory(data: dict):
     type_name = data.get("type", "int")
     if value is None: return {"status": "error", "message": "Value is required"}
     
-    results = memory_instance.search_value(float(value) if type_name == "float" else int(value), type_name)
+    val_typed = float(value) if type_name == "float" else int(value)
+    results = await asyncio.to_thread(memory_instance.search_value, val_typed, type_name)
     return {"status": "success", "count": len(results), "results": [hex(r) for r in results[:100]]}
 
 @app.post("/api/memory/filter")
@@ -181,7 +213,8 @@ async def filter_memory(data: dict):
     type_name = data.get("type", "int")
     if value is None: return {"status": "error", "message": "Value is required"}
     
-    results = memory_instance.filter_candidates(float(value) if type_name == "float" else int(value), type_name)
+    val_typed = float(value) if type_name == "float" else int(value)
+    results = await asyncio.to_thread(memory_instance.filter_candidates, val_typed, type_name)
     return {"status": "success", "count": len(results), "results": [hex(r) for r in results[:100]]}
 
 @app.post("/api/memory/calibrate")
@@ -198,7 +231,7 @@ async def calibrate_memory(data: dict):
     
     try:
         anchor_addr = int(anchor_hex, 16)
-        discovered = memory_instance.discover_nearby_stats(anchor_addr, values)
+        discovered = await asyncio.to_thread(memory_instance.discover_nearby_stats, anchor_addr, values)
         return {"status": "success", "offsets": {k: hex(v) for k, v in discovered.items()}}
     except Exception as e:
         return {"status": "error", "message": str(e)}

@@ -41,27 +41,60 @@ class MemoryManager:
             return False
 
         try:
-            self.pm = Pymem()
+            print(f"[*] Abriendo proceso Mu (PID: {self.pid or 'Auto'})...")
             if self.pid:
+                self.pm = Pymem()
                 self.pm.open_process_from_id(self.pid)
-                logger.info(f"[*] Conectado a la memoria de {self.process_name} (PID: {self.pid})")
             else:
-                self.pm.open_process_from_name(self.process_name)
-                logger.info(f"[*] Conectado a la memoria de {self.process_name}")
+                self.pm = Pymem(self.process_name)
             
-            module = module_from_name(self.pm.process_handle, self.process_name)
-            self.base_address = module.lpBaseOfDll
-            logger.info(f"[*] Base Address: {hex(self.base_address)}")
+            print(f"[*] Proceso validado. Verificando punto de entrada (Fast Path)...")
+            
+            # Fast Path: Check standard Mu base addresses first to avoid Anti-Cheat hangs
+            # 0x400000 is the standard for almost all 32-bit Mu Online clients
+            test_addresses = [0x400000, 0x01000000]
+            
+            for addr in test_addresses:
+                try:
+                    # Check for 'MZ' header (0x5A4D)
+                    header = self.pm.read_bytes(addr, 2)
+                    if header == b'MZ':
+                        self.base_address = addr
+                        print(f"[*] Base Address verificado via MZ Header: {hex(self.base_address)}")
+                        return True
+                except:
+                    continue
+
+            # Fallback: If Fast Path fails, try low-level Psapi ONLY if not already found
+            print("[*] MZ Header no encontrado. Intentando detección dinámica...")
+            try:
+                import ctypes
+                from ctypes import wintypes
+                Psapi = ctypes.WinDLL('Psapi.dll')
+                h_modules = (wintypes.HMODULE * 1)()
+                cb_needed = wintypes.DWORD()
+                if Psapi.EnumProcessModules(self.pm.process_handle, ctypes.byref(h_modules), ctypes.sizeof(h_modules), ctypes.byref(cb_needed)):
+                    self.base_address = h_modules[0]
+                    print(f"[*] Base Address encontrado (Psapi): {hex(self.base_address)}")
+                    return True
+            except: pass
+
+            # Last Resort Default
+            self.base_address = 0x400000
+            print(f"[!] Usando dirección por defecto: {hex(self.base_address)}")
             return True
+
         except Exception as e:
-            logger.error(f"[!] Error conectando a la memoria: {e}")
+            print(f"[!] Error crítico conectando a la memoria: {e}")
             return False
 
     def start_polling(self, callback=None):
+        print("[*] Iniciando hilo de monitoreo RAM...")
         self.on_update_callback = callback
         self.running = True
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
+        print("[*] Hilo de monitoreo iniciado correctamente.")
 
     def stop(self):
         self.running = False
@@ -110,42 +143,67 @@ class MemoryManager:
             return []
             
         self.candidates = []
-        logger.info(f"[*] Escaneando memoria: Buscando {value} ({value_type})...")
+        print(f"[*] Escaneando memoria: Buscando {value} ({value_type})...")
         
         try:
-            # We scan the main module memory regions
-            # To be efficient, we iterate through readable memory pages
             import ctypes
+            import struct
             from pymem.ressources.structure import MEMORY_BASIC_INFORMATION
             
             address = 0
-            while address < 0x7FFFFFFF: # typical 32-bit user space range
+            # Detect process architecture
+            import sys
+            import ctypes
+            is_wow64 = ctypes.c_int()
+            ctypes.windll.kernel32.IsWow64Process(self.pm.process_handle, ctypes.byref(is_wow64))
+            # If is_wow64 is True, it's a 32-bit process on 64-bit OS.
+            # If False and running on 64-bit Python, it's 64-bit.
+            is_64bit = (struct.calcsize("P") == 8) and (is_wow64.value == 0)
+            max_address = 0x7FFFFFFFFFFF if is_64bit else 0x7FFFFFFF
+            
+            logger.info(f"[*] Rango de escaneo: 0x0 - {hex(max_address)} (Process is {'64' if is_64bit else '32'}-bit)")
+            
+            region_count = 0
+            while address < max_address:
                 mbi = MEMORY_BASIC_INFORMATION()
                 if ctypes.windll.kernel32.VirtualQueryEx(self.pm.process_handle, ctypes.c_void_p(address), ctypes.byref(mbi), ctypes.sizeof(mbi)):
-                    # Check if memory is committed, accessible, and not protected
-                    if mbi.State == 0x1000 and (mbi.Protect & 0x100) == 0: # MEM_COMMIT and not PAGE_GUARD
-                        # Read and check values in this region
-                        try:
-                            data = self.pm.read_bytes(mbi.BaseAddress, mbi.RegionSize)
-                            for i in range(0, len(data) - 4, 4):
-                                if value_type == "int":
-                                    val = int.from_bytes(data[i:i+4], byteorder='little')
-                                    if val == value:
-                                        self.candidates.append(mbi.BaseAddress + i)
-                                elif value_type == "float":
-                                    import struct
-                                    try:
-                                        val = struct.unpack('f', data[i:i+4])[0]
-                                        if abs(val - value) < 0.1: # Float epsilon
-                                            self.candidates.append(mbi.BaseAddress + i)
-                                    except: pass
-                        except:
-                            pass
-                    address = mbi.BaseAddress + mbi.RegionSize
-                else:
-                    break
+                    if mbi.RegionSize <= 0: break
                     
-            logger.info(f"[*] Escaneo finalizado. {len(self.candidates)} candidatos encontrados.")
+                    # State 0x1000 = MEM_COMMIT
+                    # Protect: we want readable memory, avoiding GUARD (0x100) and NOACCESS (0x01)
+                    # Common readable: PAGE_READONLY (0x02), PAGE_READWRITE (0x04), PAGE_EXECUTE_READ (0x20), PAGE_EXECUTE_READWRITE (0x40)
+                    is_readable = (mbi.State == 0x1000) and \
+                                 (mbi.Protect & 0x101 == 0) # Not NOACCESS and Not GUARD
+                                 
+                    if is_readable:
+                        try:
+                            # Skip extremely large regions to avoid OOM
+                            if mbi.RegionSize < 128 * 1024 * 1024:
+                                data = self.pm.read_bytes(mbi.BaseAddress, mbi.RegionSize)
+                                
+                                if value_type == "int":
+                                    search_pat = struct.pack('<i', int(value))
+                                elif value_type == "float":
+                                    search_pat = struct.pack('<f', float(value))
+                                else: search_pat = None
+
+                                if search_pat:
+                                    pos = data.find(search_pat)
+                                    while pos != -1:
+                                        self.candidates.append(mbi.BaseAddress + pos)
+                                        if len(self.candidates) > 100000: # Limit to 100k results
+                                            logger.warning("[!] Demasiados resultados (>100k). Deteniendo escaneo inicial.")
+                                            return self.candidates
+                                        pos = data.find(search_pat, pos + 4)
+                        except: pass
+                    
+                    address = mbi.BaseAddress + mbi.RegionSize
+                    region_count += 1
+                    if region_count % 500 == 0:
+                        print(f"[*] Progreso de escaneo: {hex(address)} / {hex(max_address)}")
+                else: break
+                    
+            print(f"[*] Escaneo finalizado. {len(self.candidates)} candidatos encontrados.")
             return self.candidates
         except Exception as e:
             logger.error(f"Error en escaneo: {e}")
