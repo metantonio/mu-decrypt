@@ -14,6 +14,7 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8000
 
 async def main():
+    loop = asyncio.get_event_loop()
     parser = argparse.ArgumentParser(description="Mu Online Packet Decryptor & Injector")
     parser.add_argument("--port", type=int, default=None, help="Local port to listen on (default: matches remote port if --scan is used, otherwise 55901)")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Remote server host (default: 127.0.0.1)")
@@ -77,7 +78,7 @@ async def main():
                 if mem.connect():
                     import src.fast_server as fs
                     fs.memory_instance = mem
-                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), asyncio.get_event_loop()))
+                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
                     print("[*] Memoria conectada y monitoreando.")
 
             # Unified startup

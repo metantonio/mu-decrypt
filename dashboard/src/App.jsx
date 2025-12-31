@@ -175,8 +175,7 @@ function App() {
       if (data.status === 'success') {
         setScanner(prev => ({ ...prev, loading: false }));
         if (data.offsets.hp) {
-          const addr = parseInt(data.offsets.hp, 16);
-          const off = addr - memoryStats.base_address;
+          const off = parseInt(data.offsets.hp, 16);
           fetch('http://localhost:8000/api/memory/offsets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -184,8 +183,7 @@ function App() {
           });
         }
         if (data.offsets.mp) {
-          const addr = parseInt(data.offsets.mp, 16);
-          const off = addr - memoryStats.base_address;
+          const off = parseInt(data.offsets.mp, 16);
           fetch('http://localhost:8000/api/memory/offsets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -295,8 +293,20 @@ function App() {
               <label>MP: {memoryStats.mp} / {memoryStats.max_mp}</label>
               <div className="stat-bar mp" style={{ width: `${(memoryStats.mp / memoryStats.max_mp) * 100 || 0}%` }}></div>
             </div>
-            <div style={{ marginTop: '0.8rem', fontSize: '0.9rem', color: 'var(--accent)' }}>
-              Nivel: <span style={{ fontWeight: 700 }}>{memoryStats.level}</span>
+            <div className="level-badge" style={{
+              marginTop: '1.2rem',
+              padding: '0.8rem',
+              background: 'linear-gradient(45deg, rgba(79, 70, 229, 0.2), rgba(255, 255, 255, 0.05))',
+              borderRadius: '12px',
+              border: '1px solid var(--primary)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '0.8rem', opacity: 0.7, textTransform: 'uppercase', letterSpacing: '1px' }}>Nivel</span>
+              <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', textShadow: '0 0 10px rgba(79, 70, 229, 0.5)' }}>
+                {memoryStats.level}
+              </span>
             </div>
           </div>
         )}
@@ -536,13 +546,30 @@ function App() {
               )}
 
               <div className="guide-box">
-                <h4>📖 Cómo encontrar los Offsets:</h4>
-                <ol>
-                  <li>Pon tu <b>Nivel</b> actual y pulsa "Primer Escaneo".</li>
-                  <li>Sube un nivel en el juego.</li>
-                  <li>Pon el <b>Nuevo Nivel</b> y pulsa "Filtrar".</li>
-                  <li>Cuando queden pocos resultados, usa el botón <b>LVL</b>.</li>
-                </ol>
+                <div className="guide-header">
+                  <span className="guide-icon">📖</span>
+                  <h4>Guía Rápida: Cómo encontrar Offsets</h4>
+                </div>
+
+                <div className="guide-steps">
+                  <div className="guide-group">
+                    <h5>1. Localizar Nivel (Ancla)</h5>
+                    <ol>
+                      <li>Pon tu <b>Nivel actual</b> y pulsa <b>Primer Escaneo</b>.</li>
+                      <li>Sube un nivel y pulsa <b>Filtrar</b> con el nuevo valor.</li>
+                      <li>Cuando queden pocos resultados, usa el botón <b>LVL</b>.</li>
+                    </ol>
+                  </div>
+
+                  <div className="guide-group success">
+                    <h5>2. Auto-Descubrimiento (Rápido) 🚀</h5>
+                    <ol>
+                      <li>Escribe tu <b>Vida</b> y <b>Maná</b> actuales arriba.</li>
+                      <li>Pulsa <b>🔍 AUTO</b> junto a tu dirección de Nivel.</li>
+                      <li>¡El sistema detectará HP/MP y sus máximos al instante!</li>
+                    </ol>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

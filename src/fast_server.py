@@ -153,8 +153,11 @@ async def get_memory_stats():
 
 @app.post("/api/memory/offsets")
 async def update_offsets(data: dict):
-    global memory_offsets
+    global memory_offsets, memory_instance
     memory_offsets.update(data)
+    if memory_instance:
+        print(f"[*] API: Actualizando offsets en motor de memoria: {data}")
+        memory_instance.update_offsets(data)
     return {"status": "success", "offsets": memory_offsets}
 
 @app.post("/api/memory/search")
