@@ -211,12 +211,28 @@ class MemoryManager:
 
     def write_value(self, address, value, value_type="int"):
         """
-        Writes a value to a specific memory address.
+        Writes a value to a specific memory address with protection bypass.
         """
-        if not self.pm:
+        if not self.pm or not self.pm.process_handle:
             return False
             
         try:
+            # size for VirtualProtect
+            size = 4 if value_type == "float" or value_type == "int" else 8
+            
+            # 1. Temporarily change protection to READWRITE (Bypass Error 5)
+            from ctypes import wintypes
+            PAGE_EXECUTE_READWRITE = 0x40
+            old_protect = wintypes.DWORD()
+            ctypes.windll.kernel32.VirtualProtectEx(
+                self.pm.process_handle, 
+                ctypes.c_void_p(address), 
+                size, 
+                PAGE_EXECUTE_READWRITE, 
+                ctypes.byref(old_protect)
+            )
+
+            # 2. Perform write
             if value_type == "int":
                 self.pm.write_int(address, int(value))
             elif value_type == "float":
@@ -224,7 +240,16 @@ class MemoryManager:
             else:
                 return False
                 
-            logger.info(f"[*] Escrito: {value} ({value_type}) en {hex(address)}")
+            # 3. Restore original protection
+            ctypes.windll.kernel32.VirtualProtectEx(
+                self.pm.process_handle, 
+                ctypes.c_void_p(address), 
+                size, 
+                old_protect, 
+                ctypes.byref(old_protect)
+            )
+
+            logger.info(f"[*] Escrito (Protección Bypassed): {value} ({value_type}) en {hex(address)}")
             return True
         except Exception as e:
             logger.error(f"[!] Error escribiendo en memoria ({hex(address)}): {e}")
