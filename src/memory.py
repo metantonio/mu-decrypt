@@ -176,6 +176,45 @@ class MemoryManager:
         logger.info(f"[*] Filtrado finalizado. Quedan {len(self.candidates)} candidatos.")
         return self.candidates
 
+    def discover_nearby_stats(self, anchor_address, targets):
+        """
+        Scans nearby memory of an anchor (e.g. Level) for other values (HP/MP).
+        'targets' is a dict: {"hp": 500.0, "mp": 200.0}
+        Returns a dict of discovered offsets.
+        """
+        if not self.pm or not self.base_address:
+            return {}
+            
+        discovered = {}
+        # Search range: ±1024 bytes around anchor
+        search_start = max(0, anchor_address - 1024)
+        search_end = anchor_address + 1024
+        
+        try:
+            logger.info(f"[*] Escaneando alrededores de {hex(anchor_address)} por {targets}...")
+            data = self.pm.read_bytes(search_start, 2048)
+            import struct
+            
+            for key, target_val in targets.items():
+                if target_val <= 0: continue
+                
+                # We look for Floats (standard for HP/MP)
+                for i in range(0, len(data) - 4, 4):
+                    try:
+                        val = struct.unpack('f', data[i:i+4])[0]
+                        if abs(val - target_val) < 1.0: # Close enough for a float
+                            addr = search_start + i
+                            offset = addr - self.base_address
+                            discovered[key] = offset
+                            logger.info(f"[*] ¡Posible {key} encontrado en offset {hex(offset)}!")
+                            break # Found one, move to next target
+                    except: pass
+            
+            return discovered
+        except Exception as e:
+            logger.error(f"Error en descubrimiento de estructura: {e}")
+            return {}
+
     def read_at_offset(self, offset, type="int"):
         if not self.base_address or not self.pm:
             return None

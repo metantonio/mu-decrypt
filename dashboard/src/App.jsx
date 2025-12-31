@@ -20,6 +20,7 @@ function App() {
     loading: false,
     message: ''
   });
+  const [calibrationValues, setCalibrationValues] = useState({ hp: '', mp: '' });
 
   const [scanResults, setScanResults] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -154,6 +155,50 @@ function App() {
       console.error(e);
     }
     setIsScanning(false);
+  };
+
+  const handleAutoDiscovery = async (anchorHex) => {
+    setScanner(prev => ({ ...prev, loading: true, message: 'Buscando HP/MP cerca...' }));
+    try {
+      const response = await fetch('http://localhost:8000/api/memory/calibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          anchor: anchorHex,
+          values: {
+            hp: parseFloat(calibrationValues.hp) || 0,
+            mp: parseFloat(calibrationValues.mp) || 0
+          }
+        })
+      });
+      const data = await response.json();
+      if (data.status === 'success') {
+        setScanner(prev => ({ ...prev, loading: false }));
+        if (data.offsets.hp) {
+          const addr = parseInt(data.offsets.hp, 16);
+          const off = addr - memoryStats.base_address;
+          fetch('http://localhost:8000/api/memory/offsets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hp_offset: off, max_hp_offset: off + 4 })
+          });
+        }
+        if (data.offsets.mp) {
+          const addr = parseInt(data.offsets.mp, 16);
+          const off = addr - memoryStats.base_address;
+          fetch('http://localhost:8000/api/memory/offsets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mp_offset: off, max_mp_offset: off + 4 })
+          });
+        }
+        setScanner(prev => ({ ...prev, message: '¡Estructura HP/MP detectada y aplicada!' }));
+      } else {
+        setScanner(prev => ({ ...prev, loading: false, message: 'No se halló estructura cerca.' }));
+      }
+    } catch (e) {
+      setScanner(prev => ({ ...prev, loading: false, message: 'Error de calibración.' }));
+    }
   };
 
   const applyRedirect = async (domain) => {
@@ -422,6 +467,14 @@ function App() {
                     <option value="float">Float (HP/MP)</option>
                   </select>
                 </div>
+                <div className="calibration-box" style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <p style={{ fontSize: '0.75rem', opacity: 0.6, marginBottom: '0.5rem' }}>Auto-Descubrimiento (Opcional)</p>
+                  <div className="input-row">
+                    <input type="text" placeholder="Vida actual" value={calibrationValues.hp} onChange={e => setCalibrationValues({ ...calibrationValues, hp: e.target.value })} />
+                    <input type="text" placeholder="Maná actual" value={calibrationValues.mp} onChange={e => setCalibrationValues({ ...calibrationValues, mp: e.target.value })} />
+                  </div>
+                </div>
+
                 <div className="button-row">
                   <button
                     className="btn-primary"
@@ -469,6 +522,7 @@ function App() {
                             <td>
                               <div className="mini-actions">
                                 <button className="mini-btn lvl" onClick={() => applyMemoryOffset(res, 'level')}>LVL</button>
+                                <button className="mini-btn discovery" onClick={() => handleAutoDiscovery(res)} title="Busca HP/MP cerca">🔍 AUTO</button>
                                 <button className="mini-btn hp" onClick={() => applyMemoryOffset(res, 'hp')}>HP</button>
                                 <button className="mini-btn mp" onClick={() => applyMemoryOffset(res, 'mp')}>MP</button>
                               </div>

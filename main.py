@@ -9,6 +9,10 @@ from src.memory import MemoryManager
 from src.fast_server import app, send_packet_to_ui, get_command_for_proxy, send_memory_to_ui
 import uvicorn
 
+# Global server config
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 8000
+
 async def main():
     parser = argparse.ArgumentParser(description="Mu Online Packet Decryptor & Injector")
     parser.add_argument("--port", type=int, default=None, help="Local port to listen on (default: matches remote port if --scan is used, otherwise 55901)")
@@ -62,59 +66,25 @@ async def main():
                 divert = DivertManager(host, port, local_port)
                 if not divert.start():
                     return
-                # Notify API that we are in transparent mode
-                try:
-                    import requests
-                    requests.post("http://localhost:8000/api/config", json={"transparent": True}, timeout=1)
-                except:
-                    pass
+            # Divert/Transparent mode configuration will be sent after server starts
             
             if args.ui:
                 proxy.ui_callback = send_packet_to_ui
             
-            mem = None
-            try:
-                if args.memory:
-                    mem = MemoryManager(name, pid=pid) # Use specific PID from scan
-                    loop = asyncio.get_event_loop()
-                    if mem.connect():
-                        import src.fast_server as fast_server
-                        fast_server.memory_instance = mem
-                        mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), loop))
-                        print("[*] Iniciando hilos de soporte...")
-            except Exception as e:
-                print(f"[!] Error crítico durante inicialización: {e}")
-                import traceback
-                traceback.print_exc()
-                return
+            # Prepare support tasks
+            if args.memory:
+                mem = MemoryManager(name, pid=pid)
+                if mem.connect():
+                    import src.fast_server as fs
+                    fs.memory_instance = mem
+                    mem.start_polling(callback=lambda s: asyncio.run_coroutine_threadsafe(send_memory_to_ui(s), asyncio.get_event_loop()))
+                    print("[*] Memoria conectada y monitoreando.")
 
-            try:
-                if args.ui:
-                    print(f"[*] Configurando Dashboard en puerto 8000...")
-                    print(f"[*] Dashboard disponible en: http://localhost:8000")
-                    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
-                    server = uvicorn.Server(config)
-                    
-                    print("[*] Lanzando loop principal (Proxy + UI)...")
-                    await asyncio.gather(
-                        proxy.start(),
-                        server.serve()
-                    )
-                else:
-                    await proxy.start()
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                print("\n[!] Deteniendo proxy y servidores...")
-            finally:
-                if divert:
-                    divert.stop()
-                if mem:
-                    mem.stop()
-                if proxy:
-                    await proxy.stop()
-                HostsManager.clear_all_redirections()
+            # Unified startup
+            await run_services(proxy, server_enabled=args.ui, transparent_mode=args.transparent, divert=divert, mem=mem)
             return
-        return
 
+    # --- Mode: Manual Start ---
     local_port = args.port if args.port is not None else 55901
     print("="*50)
     print("   Mu Online Packet Decryptor & Injector Concept")
@@ -125,32 +95,47 @@ async def main():
     print("="*50)
 
     proxy = MuProxy(local_port, args.host, args.remote_port)
-    if args.ui:
-        proxy.ui_callback = send_packet_to_ui
+    await run_services(proxy, server_enabled=args.ui, transparent_mode=args.transparent)
+
+async def run_services(proxy, server_enabled=False, transparent_mode=False, divert=None, mem=None):
+    """Unified service runner for Proxy + UI + Divert"""
+    from src.fast_server import send_packet_to_ui, app
+    import src.fast_server as fs
     
+    if not server_enabled:
+        print("[!] Dashboard UI desactivado. El frontend no podrá conectar al puerto 8000.")
+
+    if server_enabled:
+        proxy.ui_callback = send_packet_to_ui
+
+    tasks = [proxy.start()]
+    server = None
+    
+    if server_enabled:
+        print(f"[*] Configurando Dashboard en http://{SERVER_HOST}:{SERVER_PORT}...")
+        config = uvicorn.Config(app, host=SERVER_HOST, port=SERVER_PORT, log_level="info")
+        server = uvicorn.Server(config)
+        tasks.append(server.serve())
+        
+        # Apply configurations directly to the fast_server module
+        if transparent_mode:
+            fs.transparent_mode_active = True
+            fs.active_redirection["mode"] = "divert"
+            fs.active_redirection["status"] = "success"
+            print("[*] Config: Modo transparente activado.")
+
     try:
-        if args.ui:
-            print(f"[*] Dashboard disponible en: http://localhost:8000")
-            config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="error")
-            server = uvicorn.Server(config)
-            
-            await asyncio.gather(
-                proxy.start(),
-                server.serve()
-            )
-        else:
-            await proxy.start()
+        await asyncio.gather(*tasks)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        print("\n[!] Deteniendo proxy y servidores...")
+        print("\n[!] Deteniendo servicios...")
     except Exception as e:
-        print(f"\n[!] Error crítico: {e}")
+        print(f"\n[!] Error en ejecución: {e}")
         import traceback
         traceback.print_exc()
     finally:
-        if 'divert' in locals() and divert:
-            divert.stop()
-        if 'proxy' in locals() and proxy:
-            await proxy.stop()
+        if divert: divert.stop()
+        if mem: mem.stop()
+        await proxy.stop()
         HostsManager.clear_all_redirections()
 
 if __name__ == "__main__":

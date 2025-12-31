@@ -181,6 +181,25 @@ async def filter_memory(data: dict):
     results = memory_instance.filter_candidates(float(value) if type_name == "float" else int(value), type_name)
     return {"status": "success", "count": len(results), "results": [hex(r) for r in results[:100]]}
 
+@app.post("/api/memory/calibrate")
+async def calibrate_memory(data: dict):
+    global memory_instance
+    if not memory_instance:
+        return {"status": "error", "message": "Memory engine not running"}
+    
+    anchor_hex = data.get("anchor")
+    values = data.get("values", {}) # {"hp": 500.0, "mp": 200.0}
+    
+    if not anchor_hex:
+        return {"status": "error", "message": "Anchor address is required"}
+    
+    try:
+        anchor_addr = int(anchor_hex, 16)
+        discovered = memory_instance.discover_nearby_stats(anchor_addr, values)
+        return {"status": "success", "offsets": {k: hex(v) for k, v in discovered.items()}}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 async def send_memory_to_ui(stats: dict):
     """Streams memory stats to the UI via WebSocket"""
     global memory_stats, memory_instance
