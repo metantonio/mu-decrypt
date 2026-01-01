@@ -1,30 +1,30 @@
 # Mu Online Packet Decryptor & Injector Engine
 
-Este proyecto es una suite avanzada diseñada para la interceptación, análisis y manipulación del protocolo de comunicación de Mu Online. Cuenta con una arquitectura asíncrona robusta y una interfaz web moderna para un análisis cómodo en tiempo real.
+This project is an advanced suite designed for interception, analysis, and manipulation of the Mu Online communication protocol. It features a robust asynchronous architecture and a modern web interface for convenient real-time analysis.
 
-## Características Principales
+## Main Features
 
-- 🚀 **Dashboard Web Moderno**: Interfaz fluida para monitorizar paquetes e inyectar datos con un clic.
-- 🔍 **Escáner de Procesos**: Detección automática de procesos `main.exe` y sus conexiones activas.
-- 🛠️ **Gestión de Redirección**: Soporte para edición segura del archivo `hosts` con restauración automática.
-- 🧩 **Parser de OpCodes**: Identificación de acciones comunes como Movimiento, Teletransporte y Chat.
-- 🔒 **Decodificación**: Soporte inicial para SimpleModulus (C3/C4).
+- 🚀 **Modern Web Dashboard**: Fluid interface to monitor packets and inject data with a single click.
+- 🔍 **Process Scanner**: Automatic detection of `main.exe` processes and their active connections.
+- 🛠️ **Redirection Management**: Support for secure editing of the `hosts` file with automatic restoration.
+- 🧩 **OpCode Parser**: Identification of common actions such as Movement, Teleport, and Chat.
+- 🔒 **Decoding**: Initial support for SimpleModulus (C3/C4).
 
-## Requisitos
+## Requirements
 
 - Python 3.8+
-- Node.js & npm (Para el Dashboard)
-- Privilegios de Administrador (Opcional, para modificar el archivo `hosts`)
+- Node.js & npm (For the Dashboard)
+- Administrator Privileges (Optional, for modifying the `hosts` file)
 
-## Instalación
+## Installation
 
 ### 1. Backend (Python)
 ```powershell
-# Crear y activar entorno virtual
+# Create and activate virtual environment
 python -m venv venv
 .\venv\Scripts\activate
 
-# Instalar dependencias
+# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -34,40 +34,38 @@ cd dashboard
 npm install
 ```
 
-## Uso
+## Usage
 
-### Lanzamiento Completo (Recomendado)
+### Full Launch (Recommended)
 
-Inicia el servidor backend con la interfaz web y el escaneo automático:
+Start the backend server with the web interface and automatic scanning:
 ```powershell
-#python main.py --scan --ui
-python main.py --scan --ui --redirect connect.muonline.com
+python main.py --scan --ui --memory
+#python main.py --scan --ui --redirect connect.muonline.com
 #python main.py --scan --port 44405 --host 139.5.226.83 --remote-port 44405 --ui
 #python main.py --scan --ui --transparent
-#python main.py --scan --ui --memory
 ```
 
-
-Luego, en otra terminal, lanza el Dashboard:
+Then, in another terminal, launch the Dashboard:
 ```powershell
 cd dashboard
 npm run dev
 ```
-Accede a la interfaz en `http://localhost:5173`.
+Access the interface at `http://localhost:5173`.
 
-### Argumentos de la CLI:
-- `--ui`: Activa el bridge para la interfaz web (WebSocket).
-- `--scan`: Escanea procesos activos para autoconfigurar el proxy.
-- `--redirect <dominio>`: Redirige un dominio (ej. `connect.muonline.com`) a `127.0.0.1` usando el archivo hosts.
-- `--port <puerto>`: Puerto local para la escucha del proxy (default: 55901).
+### CLI Arguments:
+- `--ui`: Activates the bridge for the web interface (WebSocket).
+- `--scan`: Scans active processes to auto-configure the proxy.
+- `--redirect <domain>`: Redirects a domain (e.g. `connect.muonline.com`) to `127.0.0.1` using the hosts file.
+- `--port <port>`: Local port for proxy listening (default: 55901).
 
-## Estructura del Proyecto
+## Project Structure
 
-- `src/fast_server.py`: Bridge FastAPI para comunicación en tiempo real con la UI.
-- `src/hosts_manager.py`: Utilidad para gestión segura de redirección local.
-- `src/packet.py`: Lógica de análisis y identificación de opcodes.
-- `src/proxy.py`: Servidor proxy asíncrono con inyección dinámica.
-- `dashboard/`: Frontend React + Vite con diseño premium.
+- `src/fast_server.py`: FastAPI bridge for real-time communication with the UI.
+- `src/hosts_manager.py`: Utility for secure local redirection management.
+- `src/packet.py`: Analysis logic and opcode identification.
+- `src/proxy.py`: Asynchronous proxy server with dynamic injection.
+- `dashboard/`: React + Vite frontend with premium design.
 
 ## Disclaimer
-Este proyecto tiene **fines educativos y de investigación únicamente**. El uso de estas herramientas en servidores oficiales puede violar los términos de servicio. Por favor, asegúrate de tener permiso antes de realizar análisis en infraestructuras de terceros.
+This project is for **educational and research purposes only**. Using these tools on official servers may violate terms of service. Please ensure you have permission before performing analysis on third-party infrastructures.
